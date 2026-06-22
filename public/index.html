@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Sportfest 2026</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#003399">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Sportfest 2026">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -42,7 +46,7 @@
       <input type="checkbox" id="push-toggle-checkbox" aria-describedby="push-toggle-hint">
       <span class="push-toggle-text">
         <strong id="push-toggle-title">🔔 Benachrichtigungen</strong>
-        <small id="push-toggle-hint">Bei Spielstart auf Handy oder Tablet benachrichtigen</small>
+        <small id="push-toggle-hint">Einmal aktivieren — Benachrichtigungen kommen auch wenn die Seite geschlossen ist</small>
       </span>
     </label>
   </div>
@@ -605,13 +609,13 @@
 
       if (active) {
         titleEl.textContent = '🔔 Benachrichtigungen aktiv';
-        hintEl.textContent = 'Du wirst bei Spielstart benachrichtigt';
+        hintEl.textContent = 'Du erhältst Updates auch wenn die Seite geschlossen ist';
       } else if (Notification.permission === 'denied') {
         titleEl.textContent = '🔔 Benachrichtigungen';
         hintEl.textContent = 'In den Browser-Einstellungen für diese Seite erlauben';
       } else {
         titleEl.textContent = '🔔 Benachrichtigungen';
-        hintEl.textContent = hint || 'Bei Spielstart auf Handy oder Tablet benachrichtigen';
+        hintEl.textContent = hint || 'Einmal aktivieren — funktioniert auch im Hintergrund';
       }
     }
 
@@ -713,6 +717,19 @@
       return await res.json();
     }
 
+    async function syncPushIfEnabled() {
+      if (!canSubscribeToPush() || Notification.permission !== 'granted') return;
+      try {
+        const result = await registerPushSubscription();
+        localStorage.setItem('sportfest-push', 'subscribed');
+        showPushUI('subscribed');
+        return result;
+      } catch (err) {
+        console.warn('Push sync fehlgeschlagen:', err);
+        return null;
+      }
+    }
+
     async function subscribeToPush() {
       if (!canSubscribeToPush()) {
         alert('Push-Benachrichtigungen sind hier nicht verfügbar.\n\n' + getUnsupportedPushHint());
@@ -750,28 +767,9 @@
         return;
       }
 
-      const subscribed = await isPushSubscribed();
-
-      if (subscribed) {
-        try {
-          await registerPushSubscription();
-          localStorage.setItem('sportfest-push', 'subscribed');
-        } catch (err) {
-          console.warn('Push sync fehlgeschlagen:', err);
-        }
-        showPushUI('subscribed');
+      if (await isPushSubscribed() || Notification.permission === 'granted') {
+        await syncPushIfEnabled();
         return;
-      }
-
-      if (Notification.permission === 'granted') {
-        try {
-          await registerPushSubscription();
-          localStorage.setItem('sportfest-push', 'subscribed');
-          showPushUI('subscribed');
-          return;
-        } catch (err) {
-          console.warn('Push sync fehlgeschlagen:', err);
-        }
       }
 
       const status = localStorage.getItem('sportfest-push');
@@ -781,6 +779,16 @@
         showPushUI('prompt');
       }
     }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        syncPushIfEnabled();
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      syncPushIfEnabled();
+    });
 
     document.getElementById('push-toggle-checkbox').addEventListener('change', async (e) => {
       const checkbox = e.target;

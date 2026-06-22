@@ -28,6 +28,7 @@ function normalizeData(obj) {
   if (!obj.settings) obj.settings = { gameDurationMinutes: 10 };
   if (!obj.settings.gameDurationMinutes) obj.settings.gameDurationMinutes = 10;
   if (!obj.settings.standingsSport) obj.settings.standingsSport = 'Fußball';
+  if (!Array.isArray(obj.pushSubscriptions)) obj.pushSubscriptions = [];
   obj.teams = (obj.teams || []).map(t => ({
     ...t,
     players: t.players || []
@@ -56,39 +57,71 @@ function saveData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
 
+function getPublicData() {
+  const { pushSubscriptions, vapidKeys, ...publicData } = data;
+  return publicData;
+}
+
+function syncSubscriptionsFromData() {
+  subscriptions = Array.isArray(data.pushSubscriptions) ? [...data.pushSubscriptions] : [];
+}
+
 function loadSubscriptions() {
+  syncSubscriptionsFromData();
+  if (subscriptions.length > 0) return;
+
   try {
-    subscriptions = JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8'));
+    const legacy = JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8'));
+    if (Array.isArray(legacy) && legacy.length > 0) {
+      subscriptions = legacy;
+      data.pushSubscriptions = subscriptions;
+      saveData();
+      console.log(`Migrated ${subscriptions.length} push subscriptions to data.json`);
+    }
   } catch {
-    subscriptions = [];
+    // no legacy file
   }
 }
 
 function saveSubscriptions() {
-  fs.writeFileSync(SUBS_FILE, JSON.stringify(subscriptions, null, 2), 'utf8');
+  data.pushSubscriptions = subscriptions;
+  saveData();
 }
 
-function loadVapidKeys() {
+function ensureVapidKeys() {
   if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
     return {
       publicKey: process.env.VAPID_PUBLIC_KEY,
       privateKey: process.env.VAPID_PRIVATE_KEY
     };
   }
-  try {
-    return JSON.parse(fs.readFileSync(VAPID_FILE, 'utf8'));
-  } catch {
-    const keys = webpush.generateVAPIDKeys();
-    fs.writeFileSync(VAPID_FILE, JSON.stringify(keys, null, 2), 'utf8');
-    console.log('VAPID keys generated and saved to vapid.json');
-    return keys;
+  if (data.vapidKeys?.publicKey && data.vapidKeys?.privateKey) {
+    return data.vapidKeys;
   }
+  try {
+    const fromFile = JSON.parse(fs.readFileSync(VAPID_FILE, 'utf8'));
+    if (fromFile.publicKey && fromFile.privateKey) {
+      data.vapidKeys = fromFile;
+      saveData();
+      return fromFile;
+    }
+  } catch {
+    // generate below
+  }
+  const keys = webpush.generateVAPIDKeys();
+  data.vapidKeys = keys;
+  saveData();
+  try {
+    fs.writeFileSync(VAPID_FILE, JSON.stringify(keys, null, 2), 'utf8');
+  } catch {
+    // optional backup file
+  }
+  console.log('VAPID keys generated and saved to data.json');
+  return keys;
 }
 
-const vapidKeys = loadVapidKeys();
+let vapidKeys;
 const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:sportfest@example.com';
-
-webpush.setVapidDetails(vapidSubject, vapidKeys.publicKey, vapidKeys.privateKey);
 
 function loadSessionSecret() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
@@ -208,6 +241,8 @@ function applySchiriSave(incoming) {
 
 loadData();
 loadSubscriptions();
+vapidKeys = ensureVapidKeys();
+webpush.setVapidDetails(vapidSubject, vapidKeys.publicKey, vapidKeys.privateKey);
 loadUsers();
 
 const sessionSecret = loadSessionSecret();
@@ -376,7 +411,7 @@ app.get('/preview', (req, res) => {
 });
 
 app.get('/api/data', (req, res) => {
-  res.json(data);
+  res.json(getPublicData());
 });
 
 app.get('/api/push/vapid-key', (req, res) => {
@@ -393,12 +428,20 @@ app.post('/api/push/subscribe', (req, res) => {
     console.error('Push subscribe: invalid body', req.body);
     return res.status(400).json({ error: 'Invalid subscription' });
   }
-  const exists = subscriptions.some(s => s.endpoint === sub.endpoint);
-  if (!exists) {
+  if (!sub.keys?.p256dh || !sub.keys?.auth) {
+    console.error('Push subscribe: missing keys', sub.endpoint);
+    return res.status(400).json({ error: 'Invalid subscription keys' });
+  }
+
+  const idx = subscriptions.findIndex(s => s.endpoint === sub.endpoint);
+  if (idx >= 0) {
+    subscriptions[idx] = sub;
+    console.log('Push subscribe: updated subscriber, total:', subscriptions.length);
+  } else {
     subscriptions.push(sub);
-    saveSubscriptions();
     console.log('Push subscribe: new subscriber, total:', subscriptions.length);
   }
+  saveSubscriptions();
   res.json({ ok: true, subscribers: subscriptions.length });
 });
 
@@ -468,13 +511,21 @@ app.post('/api/save', requireAuth, (req, res) => {
   const role = user?.role || 'admin';
 
   try {
+    const preservedSubs = data.pushSubscriptions || [];
+    const preservedVapid = data.vapidKeys;
+
     if (role === 'schiri') {
       data = applySchiriSave(req.body);
     } else {
       data = normalizeData(req.body);
     }
+
+    data.pushSubscriptions = preservedSubs;
+    if (preservedVapid) data.vapidKeys = preservedVapid;
+    subscriptions = data.pushSubscriptions;
+
     saveData();
-    io.emit('update', data);
+    io.emit('update', getPublicData());
     res.json({ ok: true });
   } catch (err) {
     res.status(403).json({ error: err.message || 'Keine Berechtigung' });
@@ -482,7 +533,7 @@ app.post('/api/save', requireAuth, (req, res) => {
 });
 
 io.on('connection', (socket) => {
-  socket.emit('update', data);
+  socket.emit('update', getPublicData());
 });
 
 server.listen(PORT, () => {

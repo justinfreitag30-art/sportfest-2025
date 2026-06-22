@@ -17,5 +17,4 @@ Live-Turnier-Webapp mit Echtzeit-Score-Updates via Socket.io.
 6. Du bekommst eine URL wie: https://sportfest-2026.up.railway.app
 7. Diese URL mit allen teilen — fertig!
 
-Hinweis: data.json wird auf Railway bei jedem Redeploy zurückgesetzt.
-Scores während des Sportfests können durch den Admin jederzeit neu gesetzt werden.
+Hinweis: data.json speichert auch Push-Abonnements. Nach einem Railway-Redeploy müssen sich Nutzer einmalig neu anmelden (Haken setzen).

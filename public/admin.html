@@ -123,7 +123,7 @@
       </section>
       <section class="section">
         <h2>🔔 Push-Benachrichtigungen</h2>
-        <p class="section-hint">Zuschauer aktivieren Push auf der Hauptseite. Beim Spielstart wird automatisch eine Benachrichtigung gesendet.</p>
+        <p class="section-hint">Jeder der unten auf der Hauptseite den Haken setzt, bekommt Push — auch wenn die Seite geschlossen ist.</p>
         <div class="push-status-bar" id="push-status-settings">Abonnenten: —</div>
         <label class="push-auto-label">
           <input type="checkbox" id="auto-push-start" checked>
@@ -536,7 +536,7 @@
       try {
         const res = await fetch('/api/push/status', { credentials: 'same-origin' });
         const { subscribers } = await res.json();
-        const text = `🔔 ${subscribers} Zuschauer mit Push-Benachrichtigungen`;
+        const text = `🔔 ${subscribers} Gerät${subscribers === 1 ? '' : 'e'} mit aktiven Benachrichtigungen`;
         const bar = document.getElementById('push-status');
         const bar2 = document.getElementById('push-status-settings');
         if (bar) bar.textContent = text;
@@ -560,7 +560,7 @@
       if (result.sent > 0) {
         showToast(`📢 Push an ${result.sent} Gerät${result.sent > 1 ? 'e' : ''} gesendet`);
       } else {
-        showToast(emptyHint || 'Keine Abonnenten — Zuschauer müssen Push auf der Hauptseite aktivieren', true);
+        showToast(emptyHint || 'Noch niemand hat Benachrichtigungen aktiviert — Haken unten auf der Hauptseite setzen', true);
       }
       updatePushStatus();
     }
@@ -583,7 +583,7 @@
     document.getElementById('btn-test-push').addEventListener('click', async () => {
       try {
         const result = await sendPushNotification({ test: true });
-        showPushResult(result, 'Keine Abonnenten! Zuschauer muss auf Hauptseite Push aktivieren.');
+        showPushResult(result, 'Noch keine Abonnenten — auf der Hauptseite unten den Haken setzen.');
       } catch (e) {
         showToast('Test-Push fehlgeschlagen', true);
       }
