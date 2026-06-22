@@ -856,6 +856,15 @@
 
     initPushBanner();
 
+    function getVisitorId() {
+      let id = localStorage.getItem('sportfest-visitor-id');
+      if (!id) {
+        id = 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem('sportfest-visitor-id', id);
+      }
+      return id;
+    }
+
     window.addEventListener('resize', () => {
       renderAll();
     });
@@ -866,6 +875,9 @@
       .catch(err => console.error('Failed to load data:', err));
 
     const socket = io();
+    socket.on('connect', () => {
+      socket.emit('visitor:present', { visitorId: getVisitorId(), page: 'public' });
+    });
     socket.on('update', onDataUpdate);
   </script>
 </body>

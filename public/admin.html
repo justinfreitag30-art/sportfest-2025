@@ -10,6 +10,13 @@
   <header class="admin-header">
     <h1 id="admin-page-title">⚙️ Admin — Sportfest 2026</h1>
     <div class="admin-header-links">
+      <div class="visitor-stats-bar superadmin-only" id="visitor-stats-bar" hidden>
+        <span class="visitor-stat"><strong id="visitor-online">0</strong> online</span>
+        <span class="visitor-stat-sep">·</span>
+        <span class="visitor-stat"><strong id="visitor-total">0</strong> Besuche</span>
+        <span class="visitor-stat-sep">·</span>
+        <span class="visitor-stat"><strong id="visitor-unique">0</strong> Besucher</span>
+      </div>
       <span class="admin-user-badge" id="admin-user-label">…</span>
       <button type="button" class="admin-logout-btn" id="btn-logout">Abmelden</button>
       <a href="/">← Zuschauer-Ansicht</a>
@@ -154,6 +161,24 @@
         <p class="section-hint" style="margin-top:0.5rem; margin-bottom:0;">
           Tipp: Zuschauer müssen Push auf der <strong>Hauptseite</strong> aktivieren (nicht in der Vorschau).
         </p>
+      </section>
+      <section class="section superadmin-only" id="visitor-stats-section" hidden>
+        <h2>📊 Besucherstatistik</h2>
+        <p class="section-hint">Live-Zahlen der Zuschauer-Seite — nur für den Hauptadministrator sichtbar.</p>
+        <div class="visitor-stats-grid">
+          <div class="visitor-stats-card">
+            <div class="visitor-stats-value" id="visitor-online-detail">0</div>
+            <div class="visitor-stats-label">Aktuell online</div>
+          </div>
+          <div class="visitor-stats-card">
+            <div class="visitor-stats-value" id="visitor-total-detail">0</div>
+            <div class="visitor-stats-label">Besuche gesamt</div>
+          </div>
+          <div class="visitor-stats-card">
+            <div class="visitor-stats-value" id="visitor-unique-detail">0</div>
+            <div class="visitor-stats-label">Eindeutige Besucher</div>
+          </div>
+        </div>
       </section>
       <section class="section">
         <h2>Schnellaktionen</h2>
@@ -420,6 +445,12 @@
 
       const pwToolbar = document.getElementById('user-password-toolbar');
       if (pwToolbar) pwToolbar.hidden = !isSuperAdmin();
+
+      const visitorBar = document.getElementById('visitor-stats-bar');
+      const visitorSection = document.getElementById('visitor-stats-section');
+      if (visitorBar) visitorBar.hidden = !isSuperAdmin();
+      if (visitorSection) visitorSection.hidden = !isSuperAdmin();
+      if (isSuperAdmin()) loadSiteStats();
 
       const usersHint = document.getElementById('users-tab-hint');
       if (usersHint && isSuperAdmin()) {
@@ -1213,6 +1244,37 @@
       el.style.display = 'block';
       clearTimeout(showToast._timer);
       showToast._timer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
+    function renderSiteStats(stats) {
+      if (!stats || !isSuperAdmin()) return;
+      const online = stats.onlineNow ?? 0;
+      const total = stats.totalVisits ?? 0;
+      const unique = stats.uniqueVisitors ?? 0;
+
+      const onlineEl = document.getElementById('visitor-online');
+      const totalEl = document.getElementById('visitor-total');
+      const uniqueEl = document.getElementById('visitor-unique');
+      if (onlineEl) onlineEl.textContent = String(online);
+      if (totalEl) totalEl.textContent = String(total);
+      if (uniqueEl) uniqueEl.textContent = String(unique);
+
+      const onlineDetail = document.getElementById('visitor-online-detail');
+      const totalDetail = document.getElementById('visitor-total-detail');
+      const uniqueDetail = document.getElementById('visitor-unique-detail');
+      if (onlineDetail) onlineDetail.textContent = String(online);
+      if (totalDetail) totalDetail.textContent = String(total);
+      if (uniqueDetail) uniqueDetail.textContent = String(unique);
+    }
+
+    async function loadSiteStats() {
+      if (!isSuperAdmin()) return;
+      try {
+        const res = await fetch('/api/site-stats', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const stats = await res.json();
+        renderSiteStats(stats);
+      } catch (e) { /* ignore */ }
     }
 
     async function updatePushStatus() {
@@ -2113,6 +2175,12 @@
         if (isSuperAdmin() && activeTab === 'log') {
           loadActivityLog();
         }
+      });
+      socket.on('site-stats-update', (stats) => {
+        renderSiteStats(stats);
+      });
+      socket.on('connect', () => {
+        socket.emit('visitor:present', { page: 'admin' });
       });
     });
   </script>

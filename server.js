@@ -59,7 +59,7 @@ function saveData() {
 }
 
 function getPublicData() {
-  const { pushSubscriptions, vapidKeys, activityLog, adminChat, ...publicData } = data;
+  const { pushSubscriptions, vapidKeys, activityLog, adminChat, visitorStats, ...publicData } = data;
   return publicData;
 }
 
@@ -113,6 +113,54 @@ function appendActivityLogs(user, entries) {
 
 function notifyActivityLogUpdate() {
   io.emit('activity-log-update');
+}
+
+const onlineVisitors = new Map();
+
+function ensureVisitorStats() {
+  if (!data.visitorStats || typeof data.visitorStats !== 'object') {
+    data.visitorStats = { totalVisits: 0, uniqueVisitors: 0, visitorIds: [] };
+  }
+  if (!Array.isArray(data.visitorStats.visitorIds)) {
+    data.visitorStats.visitorIds = [];
+  }
+  if (typeof data.visitorStats.totalVisits !== 'number') {
+    data.visitorStats.totalVisits = 0;
+  }
+  if (typeof data.visitorStats.uniqueVisitors !== 'number') {
+    data.visitorStats.uniqueVisitors = data.visitorStats.visitorIds.length;
+  }
+}
+
+function recordPublicVisit(visitorId) {
+  const id = String(visitorId || '').trim().slice(0, 64);
+  if (!id) return;
+
+  ensureVisitorStats();
+  data.visitorStats.totalVisits++;
+
+  const known = new Set(data.visitorStats.visitorIds);
+  if (!known.has(id)) {
+    known.add(id);
+    data.visitorStats.visitorIds = [...known];
+    data.visitorStats.uniqueVisitors = known.size;
+  }
+
+  saveData();
+}
+
+function getSiteStatsPayload() {
+  ensureVisitorStats();
+  const onlineNow = [...onlineVisitors.values()].filter(v => v.page === 'public').length;
+  return {
+    onlineNow,
+    totalVisits: data.visitorStats.totalVisits || 0,
+    uniqueVisitors: data.visitorStats.uniqueVisitors || 0
+  };
+}
+
+function broadcastSiteStats() {
+  io.emit('site-stats-update', getSiteStatsPayload());
 }
 
 function syncSubscriptionsFromData() {
@@ -593,6 +641,10 @@ app.get('/api/push/vapid-key', (req, res) => {
   res.json({ publicKey });
 });
 
+app.get('/api/site-stats', requireAuth, requireSuperAdmin, (req, res) => {
+  res.json(getSiteStatsPayload());
+});
+
 app.get('/api/push/status', requireAuth, requireAdmin, (req, res) => {
   res.json({ subscribers: subscriptions.length });
 });
@@ -738,6 +790,7 @@ app.post('/api/save', requireAuth, (req, res) => {
     const preservedVapid = data.vapidKeys;
     const preservedLog = data.activityLog || [];
     const preservedChat = data.adminChat || [];
+    const preservedStats = data.visitorStats;
 
     const savePayload = {
       settings: req.body.settings,
@@ -755,6 +808,7 @@ app.post('/api/save', requireAuth, (req, res) => {
     if (preservedVapid) data.vapidKeys = preservedVapid;
     data.activityLog = preservedLog;
     data.adminChat = preservedChat;
+    if (preservedStats) data.visitorStats = preservedStats;
     subscriptions = data.pushSubscriptions;
 
     appendActivityLogs(user, logEntries);
@@ -769,6 +823,24 @@ app.post('/api/save', requireAuth, (req, res) => {
 
 io.on('connection', (socket) => {
   socket.emit('update', getPublicData());
+
+  socket.on('visitor:present', (payload) => {
+    const page = payload?.page === 'admin' ? 'admin' : 'public';
+    const visitorId = String(payload?.visitorId || '').slice(0, 64);
+    onlineVisitors.set(socket.id, { page, visitorId });
+
+    if (page === 'public') {
+      recordPublicVisit(visitorId);
+    }
+
+    broadcastSiteStats();
+  });
+
+  socket.on('disconnect', () => {
+    if (onlineVisitors.delete(socket.id)) {
+      broadcastSiteStats();
+    }
+  });
 });
 
 server.listen(PORT, () => {
