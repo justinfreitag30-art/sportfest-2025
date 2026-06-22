@@ -553,11 +553,42 @@
       return arr;
     }
 
-    function isPushSupported() {
-      return 'Notification' in window
+    function isPreviewFrame() {
+      return window.self !== window.top;
+    }
+
+    function isIOS() {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    function isStandaloneApp() {
+      return window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true;
+    }
+
+    function canSubscribeToPush() {
+      return window.isSecureContext
+        && 'Notification' in window
         && 'serviceWorker' in navigator
-        && 'PushManager' in window
-        && window.self === window.top;
+        && 'PushManager' in window;
+    }
+
+    function shouldShowPushBar() {
+      return !isPreviewFrame();
+    }
+
+    function getUnsupportedPushHint() {
+      if (!window.isSecureContext) {
+        return 'Push funktioniert nur über HTTPS (sichere Verbindung)';
+      }
+      if (isIOS() && !('PushManager' in window)) {
+        return 'iOS: Teilen ↑ → „Zum Home-Bildschirm“ → Seite von dort öffnen';
+      }
+      if (isIOS() && !isStandaloneApp()) {
+        return 'Tipp: In Safari öffnen oder zum Home-Bildschirm hinzufügen';
+      }
+      return 'Chrome oder Safari verwenden (nicht In-App-Browser wie WhatsApp)';
     }
 
     function updatePushToggleBar(active, hint) {
@@ -570,6 +601,7 @@
       document.body.classList.add('has-push-bar');
       checkbox.checked = !!active;
       bar.classList.toggle('is-active', !!active);
+      bar.classList.toggle('is-unsupported', !!hint && !active && !canSubscribeToPush());
 
       if (active) {
         titleEl.textContent = '🔔 Benachrichtigungen aktiv';
@@ -584,7 +616,7 @@
     }
 
     async function isPushSubscribed() {
-      if (!isPushSupported() || Notification.permission !== 'granted') return false;
+      if (!canSubscribeToPush() || Notification.permission !== 'granted') return false;
       try {
         const reg = await navigator.serviceWorker.getRegistration('/');
         if (!reg) return false;
@@ -612,7 +644,13 @@
 
     function showPushUI(state) {
       const banner = document.getElementById('push-banner');
-      if (!isPushSupported()) return;
+      if (!shouldShowPushBar()) return;
+
+      if (!canSubscribeToPush()) {
+        banner.style.display = 'none';
+        updatePushToggleBar(false, getUnsupportedPushHint());
+        return;
+      }
 
       if (state === 'subscribed') {
         banner.style.display = 'none';
@@ -676,8 +714,8 @@
     }
 
     async function subscribeToPush() {
-      if (!isPushSupported()) {
-        alert('Push-Benachrichtigungen werden von diesem Browser nicht unterstützt.\n\nTipp: Safari (iOS 16.4+) oder Chrome auf dem Handy verwenden.');
+      if (!canSubscribeToPush()) {
+        alert('Push-Benachrichtigungen sind hier nicht verfügbar.\n\n' + getUnsupportedPushHint());
         return false;
       }
 
@@ -705,7 +743,12 @@
     }
 
     async function initPushBanner() {
-      if (!isPushSupported()) return;
+      if (!shouldShowPushBar()) return;
+
+      if (!canSubscribeToPush()) {
+        showPushUI('unsupported');
+        return;
+      }
 
       const subscribed = await isPushSubscribed();
 

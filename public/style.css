@@ -1723,9 +1723,13 @@ body.has-push-bar .container {
   line-height: 1.35;
 }
 
-.push-toggle-bar.is-active {
-  background: #EEF6FF;
-  border-top-color: var(--green);
+.push-toggle-bar.is-unsupported {
+  background: #FFF8E6;
+  border-top-color: #E6A800;
+}
+
+.push-toggle-bar.is-unsupported .push-toggle-text small {
+  color: #8A6D00;
 }
 
 .push-toggle-bar.is-active .push-toggle-text strong {
