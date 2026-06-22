@@ -162,7 +162,7 @@
     <div class="admin-tab-panel" id="tab-users">
       <section class="section">
         <h2>👤 Benutzerkonten</h2>
-        <p class="section-hint">Lege Konten für Admins und Schiris an. Schiris dürfen nur Punkte und Strafen ändern.</p>
+        <p class="section-hint">Lege Konten für Admins und Schiris an. Schiris können Spiele starten/beenden, Punkte und Strafen verwalten.</p>
         <div id="users-list" class="users-list"></div>
         <div class="user-create-form">
           <h3>Neues Konto anlegen</h3>
@@ -170,7 +170,7 @@
             <input type="text" id="new-username" placeholder="Benutzername" autocomplete="username">
             <input type="password" id="new-password" placeholder="Passwort (min. 4 Zeichen)" autocomplete="new-password">
             <select id="new-user-role" class="user-role-select">
-              <option value="schiri">Schiri — nur Punkte &amp; Strafen</option>
+              <option value="schiri">Schiri — Live-Scoring</option>
               <option value="admin">Administrator — alles</option>
             </select>
             <button class="btn btn-primary" id="btn-create-user">Konto erstellen</button>
@@ -353,7 +353,7 @@
       if (isSchiri()) {
         document.getElementById('admin-page-title').textContent = '🏁 Schiri — Sportfest 2026';
         document.getElementById('live-tab-hint').textContent =
-          'Punkte eintragen und Strafen vergeben. Spielstart und Einstellungen nur für Administratoren.';
+          'Spiele starten und beenden, Punkte eintragen und Strafen vergeben.';
         switchTab('live');
       } else {
         document.getElementById('admin-page-title').textContent = '⚙️ Admin — Sportfest 2026';
@@ -1110,9 +1110,9 @@
 
       list.innerHTML = active.map(match => {
         const emoji = match.emoji || SPORT_EMOJIS[match.sport] || '';
-        const startBtn = !isSchiri() && match.status === 'pending'
+        const startBtn = match.status === 'pending'
           ? `<button class="btn btn-green btn-small btn-start" data-id="${match.id}">▶ Starten</button>`
-          : (!isSchiri() && match.status === 'running'
+          : (match.status === 'running'
             ? `<button class="btn btn-red btn-small btn-stop" data-id="${match.id}">■ Beenden</button>`
             : '');
 
@@ -1184,7 +1184,7 @@
             timerExpiredMatches.delete(match.id);
             logActivity('match', `Spiel gestartet: ${matchLabel(match)}`);
             saveData().then(() => {
-              if (autoPushOnStart) sendMatchPush(match.id);
+              if (isAdmin() && autoPushOnStart) sendMatchPush(match.id);
             });
             renderAll();
           }

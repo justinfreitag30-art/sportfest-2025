@@ -226,7 +226,8 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-const SCHIRI_LOCKED_MATCH_FIELDS = ['id', 'time', 'sport', 'emoji', 'teamA', 'teamB', 'status', 'startedAt', 'endedAt'];
+const SCHIRI_LOCKED_MATCH_FIELDS = ['id', 'time', 'sport', 'emoji', 'teamA', 'teamB'];
+const SCHIRI_ALLOWED_STATUS = new Set(['pending', 'running', 'finished']);
 
 function applySchiriSave(incoming) {
   const current = normalizeData(JSON.parse(JSON.stringify(data)));
@@ -248,8 +249,12 @@ function applySchiriSave(incoming) {
 
     for (const field of SCHIRI_LOCKED_MATCH_FIELDS) {
       if (JSON.stringify(inc[field]) !== JSON.stringify(cur[field])) {
-        throw new Error('Schiris dürfen nur Punkte und Strafen ändern');
+        throw new Error('Schiris dürfen Spielplan und Teams nicht ändern');
       }
+    }
+
+    if (!SCHIRI_ALLOWED_STATUS.has(inc.status)) {
+      throw new Error('Ungültiger Spielstatus');
     }
 
     return {
@@ -257,7 +262,10 @@ function applySchiriSave(incoming) {
       scoreA: Number(inc.scoreA) || 0,
       scoreB: Number(inc.scoreB) || 0,
       goals: inc.goals || [],
-      penalties: inc.penalties || []
+      penalties: inc.penalties || [],
+      status: inc.status,
+      startedAt: inc.startedAt || null,
+      endedAt: inc.endedAt || null
     };
   });
 
