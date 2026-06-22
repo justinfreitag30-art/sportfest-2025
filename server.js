@@ -58,8 +58,33 @@ function saveData() {
 }
 
 function getPublicData() {
-  const { pushSubscriptions, vapidKeys, ...publicData } = data;
+  const { pushSubscriptions, vapidKeys, activityLog, ...publicData } = data;
   return publicData;
+}
+
+const MAX_ACTIVITY_LOG = 500;
+
+function appendActivityLogs(user, entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return;
+  if (!Array.isArray(data.activityLog)) data.activityLog = [];
+
+  const at = new Date().toISOString();
+  entries.forEach(entry => {
+    if (!entry?.text) return;
+    data.activityLog.push({
+      id: `log${Date.now()}${Math.random().toString(36).slice(2, 8)}`,
+      at,
+      userId: user?.id || null,
+      username: user?.username || 'System',
+      role: user?.role || 'admin',
+      action: String(entry.action || 'other').slice(0, 40),
+      text: String(entry.text).slice(0, 300)
+    });
+  });
+
+  if (data.activityLog.length > MAX_ACTIVITY_LOG) {
+    data.activityLog = data.activityLog.slice(-MAX_ACTIVITY_LOG);
+  }
 }
 
 function syncSubscriptionsFromData() {
@@ -383,6 +408,11 @@ app.post('/api/auth/users', requireAuth, requireAdmin, (req, res) => {
   };
   users.push(user);
   saveUsers();
+  appendActivityLogs(getSessionUser(req), [{
+    action: 'other',
+    text: `Benutzerkonto „${trimmed}" angelegt (${userRole === 'schiri' ? 'Schiri' : 'Administrator'})`
+  }]);
+  saveData();
   res.json({ ok: true, user: sanitizeUser(user) });
 });
 
@@ -452,7 +482,14 @@ app.post('/api/push/unsubscribe', (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/activity-log', requireAuth, requireAdmin, (req, res) => {
+  const logs = Array.isArray(data.activityLog) ? [...data.activityLog] : [];
+  logs.reverse();
+  res.json({ logs });
+});
+
 app.post('/api/push/notify', requireAuth, requireAdmin, async (req, res) => {
+  const user = getSessionUser(req);
   const { matchId, test, title, body, message } = req.body;
 
   if (test) {
@@ -462,6 +499,8 @@ app.post('/api/push/notify', requireAuth, requireAdmin, async (req, res) => {
         body: 'Push-Benachrichtigungen funktionieren!',
         url: '/'
       });
+      appendActivityLogs(user, [{ action: 'push', text: 'Test-Push gesendet' }]);
+      saveData();
       return res.json({ ok: true, ...result });
     } catch (err) {
       console.error('Push test error:', err);
@@ -476,6 +515,11 @@ app.post('/api/push/notify', requireAuth, requireAdmin, async (req, res) => {
     }
     try {
       const result = await sendPushToAll(buildMatchPushPayload(match));
+      appendActivityLogs(user, [{
+        action: 'push',
+        text: `Push bei Spielstart: ${getTeamName(match.teamA)} vs ${getTeamName(match.teamB)}`
+      }]);
+      saveData();
       return res.json({ ok: true, ...result });
     } catch (err) {
       console.error('Push error:', err);
@@ -492,6 +536,11 @@ app.post('/api/push/notify', requireAuth, requireAdmin, async (req, res) => {
         body: customBody.slice(0, 280),
         url: '/'
       });
+      appendActivityLogs(user, [{
+        action: 'push',
+        text: `Eigene Push-Nachricht: „${customBody.slice(0, 80)}${customBody.length > 80 ? '…' : ''}"`
+      }]);
+      saveData();
       return res.json({ ok: true, ...result });
     } catch (err) {
       console.error('Custom push error:', err);
@@ -509,20 +558,31 @@ app.post('/api/save', requireAuth, (req, res) => {
 
   const user = getSessionUser(req);
   const role = user?.role || 'admin';
+  const logEntries = Array.isArray(req.body.logEntries) ? req.body.logEntries : [];
 
   try {
     const preservedSubs = data.pushSubscriptions || [];
     const preservedVapid = data.vapidKeys;
+    const preservedLog = data.activityLog || [];
+
+    const savePayload = {
+      settings: req.body.settings,
+      teams: req.body.teams,
+      matches: req.body.matches
+    };
 
     if (role === 'schiri') {
-      data = applySchiriSave(req.body);
+      data = applySchiriSave(savePayload);
     } else {
-      data = normalizeData(req.body);
+      data = normalizeData(savePayload);
     }
 
     data.pushSubscriptions = preservedSubs;
     if (preservedVapid) data.vapidKeys = preservedVapid;
+    data.activityLog = preservedLog;
     subscriptions = data.pushSubscriptions;
+
+    appendActivityLogs(user, logEntries);
 
     saveData();
     io.emit('update', getPublicData());

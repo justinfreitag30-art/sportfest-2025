@@ -405,6 +405,70 @@ body {
   flex: 1;
 }
 
+/* ── Activity Log ── */
+
+.activity-log-toolbar {
+  margin-bottom: 0.75rem;
+}
+
+.activity-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.activity-log-item {
+  background: var(--light-gray);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  border-left: 4px solid var(--blue);
+}
+
+.activity-log-item.activity-score {
+  border-left-color: var(--green);
+}
+
+.activity-log-item.activity-penalty {
+  border-left-color: var(--red);
+}
+
+.activity-log-item.activity-match {
+  border-left-color: #7B1FA2;
+}
+
+.activity-log-item.activity-push {
+  border-left-color: #F57C00;
+}
+
+.activity-log-item.activity-reset {
+  border-left-color: #757575;
+}
+
+.activity-log-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+
+.activity-log-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-log-user strong {
+  color: var(--dark);
+}
+
+.activity-log-text {
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--dark);
+}
+
 .admin-container {
   max-width: 900px;
   margin: 0 auto;
