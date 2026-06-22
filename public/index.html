@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sportfest 2025</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="header">
+    <h1>⚽ Sportfest 2025</h1>
+    <div class="date" id="current-date"></div>
+    <div class="live-indicator" id="live-indicator" style="display:none;">
+      <span class="live-dot"></span>
+      LIVE
+    </div>
+  </header>
+
+  <div class="push-banner" id="push-banner" style="display:none;">
+    <span class="push-banner-text">🔔 Push-Benachrichtigungen bei Spielstart?</span>
+    <button class="btn btn-red btn-small" id="btn-enable-push">Aktivieren</button>
+    <button class="push-dismiss" id="btn-dismiss-push" aria-label="Schließen">×</button>
+  </div>
+  <div class="push-success" id="push-success" style="display:none;">✅ Push-Benachrichtigungen aktiv</div>
+
+  <main class="container">
+    <div class="match-list" id="match-list"></div>
+
+    <section class="leaderboard-section" id="leaderboard-section">
+      <h2 class="leaderboard-title" id="leaderboard-title">🏆 ENDSTAND — SPORTFEST 2025</h2>
+      <div id="leaderboard"></div>
+    </section>
+
+    <div class="footer" id="last-updated">Zuletzt aktualisiert: —</div>
+    <button class="push-footer-btn" id="btn-push-footer" style="display:none;">🔔 Benachrichtigungen aktivieren</button>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    let data = { settings: { gameDurationMinutes: 10 }, teams: [], matches: [] };
+    const expandedPenaltyLogs = {};
+    let publicTimerInterval = null;
+
+    const SPORT_EMOJIS = {
+      'Fußball': '⚽',
+      'Volleyball': '🏐'
+    };
+
+    const PENALTY_TYPES = {
+      yellow:  { emoji: '🟨' },
+      red:     { emoji: '🟥' },
+      yellow2: { emoji: '🟨🟥' },
+      foul:    { emoji: '⚠️' },
+      timeout: { emoji: '⏸️' },
+      warning: { emoji: '🔔' },
+      disqual: { emoji: '❌' }
+    };
+
+    function isMobile() {
+      return window.innerWidth <= 600;
+    }
+
+    function getTeamName(id) {
+      const team = data.teams.find(t => t.id === id);
+      return team ? team.name : 'Unbekannt';
+    }
+
+    function getPlayerName(playerId) {
+      if (!playerId) return '';
+      for (const team of data.teams) {
+        const p = (team.players || []).find(pl => pl.id === playerId);
+        if (p) return (p.number ? '#' + p.number + ' ' : '') + p.name;
+      }
+      return '';
+    }
+
+    function formatTime(time) {
+      return time + ' Uhr';
+    }
+
+    function statusBadge(status) {
+      switch (status) {
+        case 'running':
+          return '<span class="badge badge-running">Läuft <span class="badge-dot">●</span></span>';
+        case 'finished':
+          return '<span class="badge badge-finished">Beendet ✓</span>';
+        default:
+          return '<span class="badge badge-pending">Ausstehend</span>';
+      }
+    }
+
+    function getRemainingSeconds(match) {
+      if (!match.startedAt || match.status !== 'running') return null;
+      const durationMs = ((data.settings && data.settings.gameDurationMinutes) || 10) * 60 * 1000;
+      const elapsed = Date.now() - new Date(match.startedAt).getTime();
+      return Math.max(0, Math.floor((durationMs - elapsed) / 1000));
+    }
+
+    function formatCountdown(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return m + ':' + String(s).padStart(2, '0');
+    }
+
+    function countTeamPenalties(match, teamSide) {
+      const penalties = match.penalties || [];
+      let yellow = 0;
+      let red = 0;
+      penalties.filter(p => p.team === teamSide).forEach(p => {
+        if (p.type === 'yellow') yellow++;
+        if (p.type === 'red' || p.type === 'yellow2' || p.type === 'disqual') red++;
+      });
+      return { yellow, red };
+    }
+
+    function penaltyBadges(match) {
+      const a = countTeamPenalties(match, 'A');
+      const b = countTeamPenalties(match, 'B');
+      let badgesA = '';
+      let badgesB = '';
+      if (a.yellow > 0) badgesA += ` <span class="card-penalty-badge">🟨×${a.yellow}</span>`;
+      if (a.red > 0) badgesA += ` <span class="card-penalty-badge">🟥×${a.red}</span>`;
+      if (b.yellow > 0) badgesB += ` <span class="card-penalty-badge">🟨×${b.yellow}</span>`;
+      if (b.red > 0) badgesB += ` <span class="card-penalty-badge">🟥×${b.red}</span>`;
+      return { badgesA, badgesB, hasRed: a.red > 0 || b.red > 0 };
+    }
+
+    function penaltyRowClass(type) {
+      if (type === 'yellow') return 'penalty-row-yellow';
+      if (type === 'red' || type === 'yellow2' || type === 'disqual') return 'penalty-row-red';
+      return '';
+    }
+
+    function renderPointHistory(match) {
+      const goals = match.goals || [];
+      if (goals.length === 0) return '';
+
+      const isVolleyball = match.sport === 'Volleyball';
+      const emoji = isVolleyball ? '🏐' : '⚽';
+      const title = isVolleyball ? 'Punkteverlauf' : 'Tore';
+
+      const rows = goals.map((g, i) => {
+        const playerName = g.playerId ? getPlayerName(g.playerId) : (isVolleyball ? 'Punkt ' + (i + 1) : 'Tor');
+        const minuteStr = g.minute ? `<span class="goal-minute">${g.minute}'</span> ` : '';
+        const chip = `<div class="point-chip">${minuteStr}${emoji} ${escapeHtml(playerName)}</div>`;
+
+        if (g.team === 'A') {
+          return `<div class="point-event-row"><div class="point-side point-side-a">${chip}</div><div class="point-side point-side-b"></div></div>`;
+        }
+        return `<div class="point-event-row"><div class="point-side point-side-a"></div><div class="point-side point-side-b">${chip}</div></div>`;
+      }).join('');
+
+      return `
+        <div class="point-history">
+          <div class="point-history-title">${title}</div>
+          ${rows}
+        </div>
+      `;
+    }
+
+    function renderPenaltyLog(match) {
+      const penalties = match.penalties || [];
+      if (penalties.length === 0) return '';
+
+      const isExpanded = expandedPenaltyLogs[match.id] === true || (!isMobile() && expandedPenaltyLogs[match.id] !== false);
+      const toggleLabel = isExpanded
+        ? `▲ ${penalties.length} Strafen ausblenden`
+        : `▼ ${penalties.length} Strafe${penalties.length > 1 ? 'n' : ''} anzeigen`;
+
+      const rows = penalties.map(p => {
+        const teamName = p.team === 'A' ? getTeamName(match.teamA) : getTeamName(match.teamB);
+        const emoji = (PENALTY_TYPES[p.type] || { emoji: '⚠️' }).emoji;
+        const minuteStr = p.minute ? `<span class="penalty-minute">${p.minute}'</span>` : '';
+        const playerName = p.playerId ? getPlayerName(p.playerId) : '';
+        const playerStr = playerName ? ` <span class="penalty-player">(${escapeHtml(playerName)})</span>` : '';
+        const note = p.customNote
+          ? `<div class="penalty-note">"${escapeHtml(p.customNote)}"</div>` : '';
+        return `
+          <div class="penalty-row ${penaltyRowClass(p.type)}">
+            <div class="penalty-row-main">
+              ${minuteStr}
+              <span class="penalty-emoji">${emoji}</span>
+              <span class="penalty-team">${escapeHtml(teamName)}${playerStr}</span>
+              <span class="penalty-reason">— ${escapeHtml(p.reason)}</span>
+            </div>
+            ${note}
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="penalty-log">
+          ${isMobile() ? `<button class="penalty-toggle" data-match-id="${match.id}">${toggleLabel}</button>` : ''}
+          <div class="penalty-log-content ${isExpanded ? '' : 'penalty-log-collapsed'}">
+            <div class="penalty-log-header">⚠️ Strafen &amp; Karten</div>
+            ${rows}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderMatchTimer(match) {
+      if (match.status !== 'running' || !match.startedAt) return '';
+      const remaining = getRemainingSeconds(match);
+      if (remaining === null) return '';
+      if (remaining === 0) {
+        return '<div class="match-timer timer-expired-pulse">⏱ ABGELAUFEN</div>';
+      }
+      return `<div class="match-timer" data-match-id="${match.id}">⏱ ${formatCountdown(remaining)} verbleibend</div>`;
+    }
+
+    function renderMatches() {
+      const list = document.getElementById('match-list');
+      const liveIndicator = document.getElementById('live-indicator');
+
+      const sorted = [...data.matches].sort((a, b) => a.time.localeCompare(b.time));
+      const hasLive = sorted.some(m => m.status === 'running');
+      liveIndicator.style.display = hasLive ? 'inline-flex' : 'none';
+
+      if (sorted.length === 0) {
+        list.innerHTML = '<div class="empty-state">Noch keine Spiele geplant.</div>';
+        return;
+      }
+
+      list.innerHTML = sorted.map(match => {
+        const emoji = match.emoji || SPORT_EMOJIS[match.sport] || '🏅';
+        const pb = penaltyBadges(match);
+        const cardClass = 'match-card' + (pb.hasRed ? ' match-card-red-border' : '');
+
+        return `
+          <div class="${cardClass}" data-match-id="${match.id}">
+            <div class="match-card-top">
+              <span class="match-time">${formatTime(match.time)}</span>
+              <span class="match-sport">${match.sport} ${emoji}</span>
+              <span class="match-status-corner">${statusBadge(match.status)}</span>
+            </div>
+            <div class="match-score-block">
+              <div class="match-score-layout">
+                <div class="team-column team-column-left">
+                  <div class="team-name">${escapeHtml(getTeamName(match.teamA))}${pb.badgesA}</div>
+                </div>
+                <div class="match-score-center">
+                  <span class="score">${match.scoreA}</span>
+                  <span class="score-separator">:</span>
+                  <span class="score">${match.scoreB}</span>
+                </div>
+                <div class="team-column team-column-right">
+                  <div class="team-name">${escapeHtml(getTeamName(match.teamB))}${pb.badgesB}</div>
+                </div>
+              </div>
+              ${renderPointHistory(match)}
+            </div>
+            ${renderMatchTimer(match)}
+            <div class="match-card-bottom match-card-bottom-desktop">
+              ${statusBadge(match.status)}
+            </div>
+            ${renderPenaltyLog(match)}
+          </div>
+        `;
+      }).join('');
+
+      document.querySelectorAll('.penalty-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.matchId;
+          expandedPenaltyLogs[id] = !expandedPenaltyLogs[id];
+          renderMatches();
+        });
+      });
+    }
+
+    function calculateStandings(sport) {
+      const stats = {};
+      data.teams.forEach(t => {
+        stats[t.id] = {
+          teamId: t.id,
+          name: t.name,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          played: 0,
+          goalsFor: 0,
+          goalsAgainst: 0,
+          points: 0,
+          yellowCards: 0,
+          redCards: 0
+        };
+      });
+
+      const sportMatches = data.matches.filter(m => m.status === 'finished' && m.sport === sport);
+
+      sportMatches.forEach(match => {
+        const a = stats[match.teamA];
+        const b = stats[match.teamB];
+        if (!a || !b) return;
+
+        a.played++;
+        b.played++;
+        a.goalsFor += match.scoreA;
+        a.goalsAgainst += match.scoreB;
+        b.goalsFor += match.scoreB;
+        b.goalsAgainst += match.scoreA;
+
+        if (match.scoreA > match.scoreB) {
+          a.wins++;
+          b.losses++;
+          a.points += 3;
+        } else if (match.scoreB > match.scoreA) {
+          b.wins++;
+          a.losses++;
+          b.points += 3;
+        } else {
+          a.draws++;
+          b.draws++;
+          a.points += 1;
+          b.points += 1;
+        }
+      });
+
+      data.matches.filter(m => m.sport === sport).forEach(match => {
+        (match.penalties || []).forEach(p => {
+          const teamId = p.team === 'A' ? match.teamA : match.teamB;
+          if (!stats[teamId]) return;
+          if (p.type === 'yellow') stats[teamId].yellowCards++;
+          if (p.type === 'red' || p.type === 'yellow2' || p.type === 'disqual') stats[teamId].redCards++;
+        });
+      });
+
+      return Object.values(stats)
+        .filter(s => sportMatches.some(m => m.teamA === s.teamId || m.teamB === s.teamId))
+        .map(s => ({
+          ...s,
+          goalDiff: s.goalsFor - s.goalsAgainst
+        }))
+        .sort((a, b) => {
+          if (b.points !== a.points) return b.points - a.points;
+          if (b.goalDiff !== a.goalDiff) return b.goalDiff - a.goalDiff;
+          if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+          return a.redCards - b.redCards;
+        });
+    }
+
+    function placeMedal(rank) {
+      if (rank === 1) return '🥇';
+      if (rank === 2) return '🥈';
+      if (rank === 3) return '🥉';
+      return rank;
+    }
+
+    function placeClass(rank) {
+      if (rank === 1) return 'place-1';
+      if (rank === 2) return 'place-2';
+      if (rank === 3) return 'place-3';
+      return '';
+    }
+
+    function renderLeaderboard() {
+      const container = document.getElementById('leaderboard');
+      const titleEl = document.getElementById('leaderboard-title');
+      const sport = (data.settings && data.settings.standingsSport) || 'Fußball';
+      const emoji = SPORT_EMOJIS[sport] || '';
+      titleEl.textContent = `🏆 ENDSTAND ${sport.toUpperCase()} ${emoji}`;
+
+      const standings = calculateStandings(sport);
+
+      if (standings.length === 0) {
+        container.innerHTML = `<div class="empty-state">Noch keine beendeten ${sport}-Spiele.</div>`;
+        return;
+      }
+
+      if (isMobile()) {
+        const top3 = standings.slice(0, 3);
+        const rest = standings.slice(3);
+
+        const podiumHtml = `
+          <div class="podium-mobile">
+            ${top3[0] ? `
+              <div class="podium-card ${placeClass(1)}">
+                <div class="podium-rank">🥇 Platz 1</div>
+                <div class="podium-team">${escapeHtml(top3[0].name)}</div>
+                <div class="podium-stats">
+                  <span>${top3[0].wins} S</span>
+                  <span>${top3[0].points} Pkt</span>
+                  <span class="fair-play">🟨 ${top3[0].yellowCards} 🟥 ${top3[0].redCards}</span>
+                </div>
+              </div>
+            ` : ''}
+            <div class="podium-row-23">
+              ${top3[1] ? `
+                <div class="podium-card ${placeClass(2)}">
+                  <div class="podium-rank">🥈 2</div>
+                  <div class="podium-team">${escapeHtml(top3[1].name)}</div>
+                  <div class="podium-stats">
+                    <span>${top3[1].wins} S · ${top3[1].points} Pkt</span>
+                    <span class="fair-play">🟨 ${top3[1].yellowCards} 🟥 ${top3[1].redCards}</span>
+                  </div>
+                </div>
+              ` : ''}
+              ${top3[2] ? `
+                <div class="podium-card ${placeClass(3)}">
+                  <div class="podium-rank">🥉 3</div>
+                  <div class="podium-team">${escapeHtml(top3[2].name)}</div>
+                  <div class="podium-stats">
+                    <span>${top3[2].wins} S · ${top3[2].points} Pkt</span>
+                    <span class="fair-play">🟨 ${top3[2].yellowCards} 🟥 ${top3[2].redCards}</span>
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `;
+
+        const restHtml = rest.length > 0 ? `
+          <div class="leaderboard-rest">
+            ${rest.map((s, i) => `
+              <div class="leaderboard-rest-row">
+                <span class="rest-rank">${i + 4}</span>
+                <span class="rest-team">${escapeHtml(s.name)}</span>
+                <span class="rest-stat">${s.wins} S</span>
+                <span class="rest-stat">${s.points} Pkt</span>
+                <span class="rest-fair">🟨 ${s.yellowCards} 🟥 ${s.redCards}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : '';
+
+        container.innerHTML = podiumHtml + restHtml;
+      } else {
+        container.innerHTML = `
+          <div class="leaderboard-table-wrap">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>Platz</th>
+                  <th>Team</th>
+                  <th>S</th>
+                  <th>P</th>
+                  <th class="col-td">TD</th>
+                  <th>Pkt</th>
+                  <th>Fair Play</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${standings.map((s, i) => {
+                  const rank = i + 1;
+                  return `
+                    <tr class="${placeClass(rank)}">
+                      <td>${placeMedal(rank)} ${rank}</td>
+                      <td class="lb-team-name">${escapeHtml(s.name)}</td>
+                      <td>${s.wins}</td>
+                      <td>${s.played}</td>
+                      <td class="col-td">${s.goalDiff >= 0 ? '+' + s.goalDiff : s.goalDiff}</td>
+                      <td class="lb-points">${s.points}</td>
+                      <td class="fair-play">🟨 ${s.yellowCards} &nbsp; 🟥 ${s.redCards}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+    }
+
+    function updatePublicTimers() {
+      document.querySelectorAll('.match-timer[data-match-id]').forEach(el => {
+        const match = data.matches.find(m => m.id === el.dataset.matchId);
+        if (!match) return;
+        const remaining = getRemainingSeconds(match);
+        if (remaining === null) return;
+        if (remaining === 0) {
+          el.textContent = '⏱ ABGELAUFEN';
+          el.classList.add('timer-expired-pulse');
+        } else {
+          el.textContent = '⏱ ' + formatCountdown(remaining) + ' verbleibend';
+          el.classList.remove('timer-expired-pulse');
+        }
+      });
+    }
+
+    function startPublicTimerInterval() {
+      if (publicTimerInterval) clearInterval(publicTimerInterval);
+      publicTimerInterval = setInterval(updatePublicTimers, 1000);
+    }
+
+    function updateTimestamp() {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const s = String(now.getSeconds()).padStart(2, '0');
+      document.getElementById('last-updated').textContent =
+        'Zuletzt aktualisiert: ' + h + ':' + m + ':' + s;
+    }
+
+    function setCurrentDate() {
+      const now = new Date();
+      const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      document.getElementById('current-date').textContent =
+        now.toLocaleDateString('de-DE', options);
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
+    }
+
+    function renderAll() {
+      renderMatches();
+      renderLeaderboard();
+      startPublicTimerInterval();
+    }
+
+    function onDataUpdate(newData) {
+      data = newData;
+      if (!data.settings) data.settings = { gameDurationMinutes: 10, standingsSport: 'Fußball' };
+      if (!data.settings.standingsSport) data.settings.standingsSport = 'Fußball';
+      renderAll();
+      updateTimestamp();
+    }
+
+    setCurrentDate();
+
+    // ── Push Notifications ──
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(base64);
+      const arr = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+      return arr;
+    }
+
+    function showPushUI(state) {
+      const banner = document.getElementById('push-banner');
+      const success = document.getElementById('push-success');
+      const footerBtn = document.getElementById('btn-push-footer');
+      if (state === 'subscribed') {
+        banner.style.display = 'none';
+        success.style.display = 'block';
+        footerBtn.style.display = 'none';
+      } else if (state === 'dismissed') {
+        banner.style.display = 'none';
+        success.style.display = 'none';
+        footerBtn.style.display = 'inline-block';
+      } else {
+        banner.style.display = 'flex';
+        success.style.display = 'none';
+        footerBtn.style.display = 'none';
+      }
+    }
+
+    async function registerPushSubscription() {
+      const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      await navigator.serviceWorker.ready;
+
+      const keyRes = await fetch('/api/push/vapid-key');
+      if (!keyRes.ok) throw new Error('VAPID key konnte nicht geladen werden');
+      const { publicKey } = await keyRes.json();
+      if (!publicKey) throw new Error('Kein VAPID public key');
+
+      let sub = await reg.pushManager.getSubscription();
+
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+      }
+
+      const subJson = sub.toJSON ? sub.toJSON() : JSON.parse(JSON.stringify(sub));
+      if (!subJson.endpoint) throw new Error('Ungültiges Push-Abo');
+
+      const res = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subJson)
+      });
+
+      if (!res.ok) {
+        if (sub) await sub.unsubscribe().catch(() => {});
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+        const retryJson = sub.toJSON();
+        const retryRes = await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(retryJson)
+        });
+        if (!retryRes.ok) throw new Error('Server hat Abo abgelehnt');
+        return await retryRes.json();
+      }
+
+      return await res.json();
+    }
+
+    async function subscribeToPush() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        alert('Push-Benachrichtigungen werden von diesem Browser nicht unterstützt.\n\nTipp: Chrome oder Edge auf dem Handy verwenden.');
+        return false;
+      }
+
+      if (window.self !== window.top) {
+        alert('Push funktioniert nicht in der Vorschau.\n\nBitte die Hauptseite direkt öffnen: ' + window.location.origin);
+        return false;
+      }
+
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          alert('Benachrichtigungen wurden abgelehnt.\n\nBitte in den Browser-Einstellungen für diese Seite erlauben.');
+          return false;
+        }
+
+        const result = await registerPushSubscription();
+        localStorage.setItem('sportfest-push', 'subscribed');
+        showPushUI('subscribed');
+        console.log('Push aktiv, Abonnenten gesamt:', result.subscribers);
+        return true;
+      } catch (err) {
+        console.error('Push Fehler:', err);
+        alert('Push konnte nicht aktiviert werden:\n' + (err.message || err));
+        return false;
+      }
+    }
+
+    async function initPushBanner() {
+      if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+      if (window.self !== window.top) return;
+
+      const status = localStorage.getItem('sportfest-push');
+
+      if (Notification.permission === 'granted') {
+        try {
+          await registerPushSubscription();
+          localStorage.setItem('sportfest-push', 'subscribed');
+          showPushUI('subscribed');
+          return;
+        } catch (err) {
+          console.warn('Push sync fehlgeschlagen:', err);
+          localStorage.removeItem('sportfest-push');
+        }
+      }
+
+      if (status === 'subscribed') {
+        localStorage.removeItem('sportfest-push');
+      }
+
+      if (status === 'dismissed') {
+        showPushUI('dismissed');
+      } else {
+        showPushUI('prompt');
+      }
+    }
+
+    document.getElementById('btn-enable-push').addEventListener('click', subscribeToPush);
+    document.getElementById('btn-push-footer').addEventListener('click', subscribeToPush);
+    document.getElementById('btn-dismiss-push').addEventListener('click', () => {
+      localStorage.setItem('sportfest-push', 'dismissed');
+      showPushUI('dismissed');
+    });
+
+    initPushBanner();
+
+    window.addEventListener('resize', () => {
+      renderAll();
+    });
+
+    fetch('/api/data')
+      .then(res => res.json())
+      .then(onDataUpdate)
+      .catch(err => console.error('Failed to load data:', err));
+
+    const socket = io();
+    socket.on('update', onDataUpdate);
+  </script>
+</body>
+</html>

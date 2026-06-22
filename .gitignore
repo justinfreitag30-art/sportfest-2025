@@ -1,0 +1,4 @@
+node_modules/
+.env
+vapid.json
+subscriptions.json

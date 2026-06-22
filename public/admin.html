@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Sportfest 2025</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="admin-header">
+    <h1>⚙️ Admin — Sportfest 2025</h1>
+    <div class="admin-header-links">
+      <a href="/">← Zuschauer-Ansicht</a>
+      <a href="/preview" target="_blank">📱 Mobile Vorschau</a>
+    </div>
+  </header>
+
+  <main class="admin-container">
+
+    <nav class="admin-tabs" id="admin-tabs">
+      <button type="button" class="admin-tab active" data-tab="live">⚡ Live</button>
+      <button type="button" class="admin-tab" data-tab="schedule">📅 Spielplan</button>
+      <button type="button" class="admin-tab" data-tab="teams">👥 Teams</button>
+      <button type="button" class="admin-tab" data-tab="players">🏃 Spieler</button>
+      <button type="button" class="admin-tab" data-tab="settings">⚙️ Mehr</button>
+    </nav>
+
+    <!-- TAB: Live Scoring -->
+    <div class="admin-tab-panel active" id="tab-live">
+      <section class="section">
+        <h2>Live Scoring</h2>
+        <p class="section-hint">Spiele starten, Tore eintragen, Strafen vergeben.</p>
+        <div class="push-status-bar" id="push-status">🔔 Push: wird geladen…</div>
+        <div id="scoring-list"></div>
+      </section>
+    </div>
+
+    <!-- TAB: Spielplan -->
+    <div class="admin-tab-panel" id="tab-schedule">
+      <section class="section">
+        <h2>Spielplan</h2>
+        <div class="form-row">
+          <input type="time" id="match-time" value="09:00">
+          <select id="match-sport">
+            <option value="Fußball">Fußball ⚽</option>
+            <option value="Volleyball">Volleyball 🏐</option>
+          </select>
+          <select id="match-teamA"></select>
+          <select id="match-teamB"></select>
+          <button class="btn btn-primary" id="btn-add-match">Spiel hinzufügen</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table id="match-table">
+            <thead>
+              <tr>
+                <th>Zeit</th>
+                <th>Sport</th>
+                <th>Team A</th>
+                <th>Team B</th>
+                <th>Status</th>
+                <th>Aktionen</th>
+              </tr>
+            </thead>
+            <tbody id="match-table-body"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:0.75rem;">
+          <button class="btn btn-red" id="btn-save-matches">💾 Reihenfolge speichern</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- TAB: Teams -->
+    <div class="admin-tab-panel" id="tab-teams">
+      <section class="section">
+        <h2>Teams</h2>
+        <p class="section-hint">Teamnamen verwalten. Spieler im Tab „Spieler" hinzufügen.</p>
+        <div id="team-list"></div>
+        <div style="margin-top:0.75rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-add-team">+ Team hinzufügen</button>
+          <button class="btn btn-red" id="btn-save-teams">💾 Speichern</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- TAB: Spieler -->
+    <div class="admin-tab-panel" id="tab-players">
+      <section class="section">
+        <h2>Spieler</h2>
+        <p class="section-hint">Spieler pro Team verwalten — werden bei Toren und Strafen ausgewählt.</p>
+        <div id="player-list"></div>
+        <div style="margin-top:0.75rem;">
+          <button class="btn btn-red" id="btn-save-players">💾 Spieler speichern</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- TAB: Einstellungen & Schnellaktionen -->
+    <div class="admin-tab-panel" id="tab-settings">
+      <section class="section">
+        <h2>⚙️ Einstellungen</h2>
+        <div class="settings-row">
+          <span class="settings-label">Spielzeit pro Partie:</span>
+          <button class="btn btn-primary btn-icon" id="btn-duration-minus">−</button>
+          <input type="number" id="game-duration" min="1" max="120" value="10" class="duration-input">
+          <span>Minuten</span>
+          <button class="btn btn-primary btn-icon" id="btn-duration-plus">+</button>
+        </div>
+        <div class="settings-row" style="margin-top:0.75rem;">
+          <span class="settings-label">Endstand anzeigen für:</span>
+          <select id="standings-sport">
+            <option value="Fußball">Fußball ⚽</option>
+            <option value="Volleyball">Volleyball 🏐</option>
+          </select>
+          <button class="btn btn-red" id="btn-save-settings">💾 Speichern</button>
+        </div>
+      </section>
+      <section class="section">
+        <h2>🔔 Push-Benachrichtigungen</h2>
+        <p class="section-hint">Zuschauer aktivieren Push auf der Hauptseite. Beim Spielstart wird automatisch eine Benachrichtigung gesendet.</p>
+        <div class="push-status-bar" id="push-status-settings">Abonnenten: —</div>
+        <label class="push-auto-label">
+          <input type="checkbox" id="auto-push-start" checked>
+          Push automatisch beim ▶ Starten senden
+        </label>
+        <div style="margin-top:0.75rem;">
+          <button class="btn btn-primary" id="btn-test-push">🔔 Test-Push senden</button>
+        </div>
+        <p class="section-hint" style="margin-top:0.5rem; margin-bottom:0;">
+          Tipp: Zuschauer müssen Push auf der <strong>Hauptseite</strong> aktivieren (nicht in der Vorschau).
+        </p>
+      </section>
+      <section class="section">
+        <h2>Schnellaktionen</h2>
+        <div class="quick-actions">
+          <button class="btn btn-gray" id="btn-reset-scores">🔄 Alle Ergebnisse zurücksetzen</button>
+          <button class="btn btn-gray" id="btn-reset-status">⏹ Alle Spiele auf Ausstehend</button>
+        </div>
+      </section>
+    </div>
+
+  </main>
+
+  <!-- Tor-Spieler Auswahl Modal -->
+  <div class="modal-overlay" id="goal-modal" style="display:none;">
+    <div class="modal-box">
+      <h3 id="goal-modal-title">⚽ Wer hat getroffen?</h3>
+      <p class="modal-subtitle" id="goal-modal-team"></p>
+      <div class="goal-player-list" id="goal-player-list"></div>
+      <button class="btn btn-gray btn-small modal-cancel" id="goal-modal-cancel">Abbrechen</button>
+    </div>
+  </div>
+
+  <div class="admin-toast" id="admin-toast" style="display:none;"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    let data = { settings: { gameDurationMinutes: 10 }, teams: [], matches: [] };
+    let nextTeamId = 1;
+    let nextMatchId = 1;
+    let nextPlayerId = 1;
+    const expandedPenaltyPanels = new Set();
+    const penaltyForms = {};
+    const timerExpiredMatches = new Set();
+    let timerInterval = null;
+    let pendingGoal = null; // { matchId, side }
+    let activeTab = 'live';
+    let autoPushOnStart = localStorage.getItem('sportfest-auto-push') !== 'false';
+
+    const SPORT_EMOJIS = {
+      'Fußball': '⚽',
+      'Volleyball': '🏐'
+    };
+
+    const PENALTY_TYPES = {
+      yellow:  { emoji: '🟨', label: 'Gelbe Karte' },
+      red:     { emoji: '🟥', label: 'Rote Karte' },
+      yellow2: { emoji: '🟨🟥', label: 'Gelb-Rot' },
+      foul:    { emoji: '⚠️', label: 'Foul' },
+      timeout: { emoji: '⏸️', label: 'Auszeit' },
+      warning: { emoji: '🔔', label: 'Verwarnung' },
+      disqual: { emoji: '❌', label: 'Disqualifikation' }
+    };
+
+    const SPORT_REASONS = {
+      'Fußball': ['Unsportliches Verhalten', 'Foulspiel', 'Zeitspiel', 'Handspiel', 'Schiedsrichterbeleidigung', 'Tätlichkeit'],
+      'Volleyball': ['Verwarnung', 'Punktstrafe', 'Ausschluss', 'Zeitstrafe', 'Netzberührung', 'Fehlgriff']
+    };
+
+    function getTeamName(id) {
+      const team = data.teams.find(t => t.id === id);
+      return team ? team.name : 'Unbekannt';
+    }
+
+    function getPenaltyForm(matchId) {
+      if (!penaltyForms[matchId]) {
+        penaltyForms[matchId] = { team: 'A', type: 'yellow', playerId: '', minute: '', reason: '', customNote: '' };
+      }
+      return penaltyForms[matchId];
+    }
+
+    function resetPenaltyForm(matchId) {
+      penaltyForms[matchId] = { team: 'A', type: 'yellow', playerId: '', minute: '', reason: '', customNote: '' };
+    }
+
+    function getTeamPlayers(teamId) {
+      const team = data.teams.find(t => t.id === teamId);
+      return team && team.players ? team.players : [];
+    }
+
+    function getPlayerName(playerId) {
+      if (!playerId) return '';
+      for (const team of data.teams) {
+        const p = (team.players || []).find(pl => pl.id === playerId);
+        if (p) return (p.number ? '#' + p.number + ' ' : '') + p.name;
+      }
+      return '';
+    }
+
+    function updateIdCounters() {
+      data.teams.forEach(t => {
+        const num = parseInt(t.id.replace('t', ''), 10);
+        if (!isNaN(num) && num >= nextTeamId) nextTeamId = num + 1;
+        (t.players || []).forEach(p => {
+          const pnum = parseInt(String(p.id).replace(/\D/g, ''), 10);
+          if (!isNaN(pnum) && pnum >= nextPlayerId) nextPlayerId = pnum + 1;
+        });
+      });
+      data.matches.forEach(m => {
+        const num = parseInt(m.id.replace('m', ''), 10);
+        if (!isNaN(num) && num >= nextMatchId) nextMatchId = num + 1;
+      });
+    }
+
+    function ensureSettings() {
+      if (!data.settings) data.settings = { gameDurationMinutes: 10, standingsSport: 'Fußball' };
+      if (!data.settings.gameDurationMinutes) data.settings.gameDurationMinutes = 10;
+      if (!data.settings.standingsSport) data.settings.standingsSport = 'Fußball';
+    }
+
+    function saveData() {
+      return fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+    }
+
+    function onDataUpdate(newData) {
+      data = newData;
+      ensureSettings();
+      updateIdCounters();
+      document.getElementById('game-duration').value = data.settings.gameDurationMinutes;
+      document.getElementById('standings-sport').value = data.settings.standingsSport || 'Fußball';
+      renderAll();
+    }
+
+    function getRemainingSeconds(match) {
+      if (!match.startedAt || match.status !== 'running') return null;
+      const durationMs = (data.settings.gameDurationMinutes || 10) * 60 * 1000;
+      const elapsed = Date.now() - new Date(match.startedAt).getTime();
+      return Math.max(0, Math.floor((durationMs - elapsed) / 1000));
+    }
+
+    function formatCountdown(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return m + ':' + String(s).padStart(2, '0');
+    }
+
+    function playBeep() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        gain.gain.value = 0.3;
+        osc.start();
+        osc.stop(ctx.currentTime + 0.5);
+      } catch (e) { /* ignore */ }
+    }
+
+    function updateTimers() {
+      data.matches.filter(m => m.status === 'running' && m.startedAt).forEach(match => {
+        const el = document.querySelector('.admin-timer[data-id="' + match.id + '"]');
+        const row = document.querySelector('.scoring-row[data-match-id="' + match.id + '"]');
+        const remaining = getRemainingSeconds(match);
+        if (remaining === null) return;
+
+        if (el) {
+          el.textContent = remaining === 0 ? '⏱ 0:00' : '⏱ ' + formatCountdown(remaining);
+          el.classList.toggle('timer-expired', remaining === 0);
+        }
+        if (row) {
+          row.classList.toggle('timer-flash', remaining === 0);
+        }
+        if (remaining === 0 && !timerExpiredMatches.has(match.id)) {
+          timerExpiredMatches.add(match.id);
+          playBeep();
+        }
+        if (remaining > 0) {
+          timerExpiredMatches.delete(match.id);
+        }
+      });
+    }
+
+    function startTimerInterval() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(updateTimers, 1000);
+      updateTimers();
+    }
+
+    // ── Settings ──
+
+    document.getElementById('btn-duration-minus').addEventListener('click', () => {
+      const input = document.getElementById('game-duration');
+      input.value = Math.max(1, parseInt(input.value, 10) - 1);
+    });
+
+    document.getElementById('btn-duration-plus').addEventListener('click', () => {
+      const input = document.getElementById('game-duration');
+      input.value = Math.min(120, parseInt(input.value, 10) + 1);
+    });
+
+    document.getElementById('btn-save-settings').addEventListener('click', () => {
+      ensureSettings();
+      data.settings.gameDurationMinutes = Math.min(120, Math.max(1,
+        parseInt(document.getElementById('game-duration').value, 10) || 10));
+      data.settings.standingsSport = document.getElementById('standings-sport').value;
+      saveData();
+    });
+
+    function showToast(msg, isWarning) {
+      const el = document.getElementById('admin-toast');
+      el.textContent = msg;
+      el.className = 'admin-toast' + (isWarning ? ' admin-toast-warn' : '');
+      el.style.display = 'block';
+      clearTimeout(showToast._timer);
+      showToast._timer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
+    async function updatePushStatus() {
+      try {
+        const res = await fetch('/api/push/status');
+        const { subscribers } = await res.json();
+        const text = `🔔 ${subscribers} Zuschauer mit Push-Benachrichtigungen`;
+        const bar = document.getElementById('push-status');
+        const bar2 = document.getElementById('push-status-settings');
+        if (bar) bar.textContent = text;
+        if (bar2) bar2.textContent = `Abonnenten: ${subscribers}`;
+      } catch (e) { /* ignore */ }
+    }
+
+    async function sendMatchPush(matchId) {
+      try {
+        const res = await fetch('/api/push/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ matchId })
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error);
+        if (result.sent > 0) {
+          showToast(`📢 Push an ${result.sent} Gerät${result.sent > 1 ? 'e' : ''} gesendet`);
+        } else {
+          showToast('Keine Abonnenten — Zuschauer müssen Push auf der Hauptseite aktivieren', true);
+        }
+        updatePushStatus();
+      } catch (e) {
+        showToast('Push konnte nicht gesendet werden', true);
+      }
+    }
+
+    document.getElementById('auto-push-start').checked = autoPushOnStart;
+    document.getElementById('auto-push-start').addEventListener('change', (e) => {
+      autoPushOnStart = e.target.checked;
+      localStorage.setItem('sportfest-auto-push', autoPushOnStart ? 'true' : 'false');
+    });
+
+    document.getElementById('btn-test-push').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/push/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ test: true })
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error);
+        if (result.sent > 0) {
+          showToast(`✅ Test-Push an ${result.sent} Gerät${result.sent > 1 ? 'e' : ''} gesendet`);
+        } else {
+          showToast('Keine Abonnenten! Zuschauer muss auf Hauptseite Push aktivieren.', true);
+        }
+        updatePushStatus();
+      } catch (e) {
+        showToast('Test-Push fehlgeschlagen', true);
+      }
+    });
+
+    function switchTab(tabId) {
+      activeTab = tabId;
+      document.querySelectorAll('.admin-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabId);
+      });
+      document.querySelectorAll('.admin-tab-panel').forEach(panel => {
+        panel.classList.toggle('active', panel.id === 'tab-' + tabId);
+      });
+    }
+
+    document.getElementById('admin-tabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('.admin-tab');
+      if (btn) switchTab(btn.dataset.tab);
+    });
+
+    // ── Team Manager ──
+
+    function renderTeams() {
+      const list = document.getElementById('team-list');
+      list.innerHTML = data.teams.map((team, idx) => `
+        <div class="team-row">
+          <input type="text" class="team-input" value="${escapeHtml(team.name)}" data-team-idx="${idx}">
+          <button class="btn btn-red btn-small btn-delete-team" data-team-idx="${idx}">🗑 Löschen</button>
+        </div>
+      `).join('');
+
+      list.querySelectorAll('.team-input').forEach(input => {
+        input.addEventListener('change', () => {
+          data.teams[parseInt(input.dataset.teamIdx, 10)].name = input.value;
+        });
+      });
+
+      list.querySelectorAll('.btn-delete-team').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.teamIdx, 10);
+          const teamId = data.teams[idx].id;
+          data.teams.splice(idx, 1);
+          data.matches = data.matches.filter(m => m.teamA !== teamId && m.teamB !== teamId);
+          renderAll();
+        });
+      });
+
+      updateTeamDropdowns();
+    }
+
+    // ── Spieler Manager ──
+
+    function renderPlayers() {
+      const list = document.getElementById('player-list');
+      if (data.teams.length === 0) {
+        list.innerHTML = '<div class="empty-state">Zuerst Teams im Tab „Teams" anlegen.</div>';
+        return;
+      }
+
+      list.innerHTML = data.teams.map((team, idx) => {
+        const players = team.players || [];
+        const playersHtml = players.map((pl, pIdx) => `
+          <div class="player-row">
+            <input type="number" class="player-number" value="${pl.number || ''}" placeholder="#"
+                   data-team-idx="${idx}" data-player-idx="${pIdx}" min="0" max="99">
+            <input type="text" class="player-name" value="${escapeHtml(pl.name)}"
+                   data-team-idx="${idx}" data-player-idx="${pIdx}" placeholder="Spielername">
+            <button class="btn btn-red btn-small btn-delete-player" data-team-idx="${idx}" data-player-idx="${pIdx}">🗑</button>
+          </div>
+        `).join('');
+
+        return `
+          <div class="team-block">
+            <div class="team-block-header">${escapeHtml(team.name)}</div>
+            ${playersHtml || '<div class="players-empty">Noch keine Spieler</div>'}
+            <button class="btn btn-primary btn-small btn-add-player" data-team-idx="${idx}">+ Spieler hinzufügen</button>
+          </div>
+        `;
+      }).join('');
+
+      list.querySelectorAll('.player-name').forEach(input => {
+        input.addEventListener('change', () => {
+          const tIdx = parseInt(input.dataset.teamIdx, 10);
+          const pIdx = parseInt(input.dataset.playerIdx, 10);
+          data.teams[tIdx].players[pIdx].name = input.value;
+        });
+      });
+
+      list.querySelectorAll('.player-number').forEach(input => {
+        input.addEventListener('change', () => {
+          const tIdx = parseInt(input.dataset.teamIdx, 10);
+          const pIdx = parseInt(input.dataset.playerIdx, 10);
+          data.teams[tIdx].players[pIdx].number = parseInt(input.value, 10) || null;
+        });
+      });
+
+      list.querySelectorAll('.btn-add-player').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.teamIdx, 10);
+          if (!data.teams[idx].players) data.teams[idx].players = [];
+          data.teams[idx].players.push({ id: 'pl' + nextPlayerId++, name: 'Neuer Spieler', number: null });
+          renderAll();
+        });
+      });
+
+      list.querySelectorAll('.btn-delete-player').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tIdx = parseInt(btn.dataset.teamIdx, 10);
+          const pIdx = parseInt(btn.dataset.playerIdx, 10);
+          const playerId = data.teams[tIdx].players[pIdx].id;
+          data.teams[tIdx].players.splice(pIdx, 1);
+          data.matches.forEach(m => {
+            if (m.goals) m.goals = m.goals.filter(g => g.playerId !== playerId);
+            if (m.penalties) m.penalties = m.penalties.map(p =>
+              p.playerId === playerId ? { ...p, playerId: null } : p
+            );
+          });
+          renderAll();
+        });
+      });
+    }
+
+    function updateTeamDropdowns() {
+      const options = data.teams.map(t =>
+        `<option value="${t.id}">${escapeHtml(t.name)}</option>`
+      ).join('');
+
+      document.getElementById('match-teamA').innerHTML = options;
+      document.getElementById('match-teamB').innerHTML = options;
+    }
+
+    document.getElementById('btn-add-team').addEventListener('click', () => {
+      data.teams.push({ id: 't' + nextTeamId++, name: 'Neues Team', players: [] });
+      renderAll();
+    });
+
+    document.getElementById('btn-save-teams').addEventListener('click', () => {
+      document.querySelectorAll('#team-list .team-input').forEach(input => {
+        const idx = parseInt(input.dataset.teamIdx, 10);
+        data.teams[idx].name = input.value;
+      });
+      saveData();
+    });
+
+    document.getElementById('btn-save-players').addEventListener('click', () => {
+      document.querySelectorAll('#player-list .player-name').forEach(input => {
+        const tIdx = parseInt(input.dataset.teamIdx, 10);
+        const pIdx = parseInt(input.dataset.playerIdx, 10);
+        data.teams[tIdx].players[pIdx].name = input.value;
+      });
+      document.querySelectorAll('#player-list .player-number').forEach(input => {
+        const tIdx = parseInt(input.dataset.teamIdx, 10);
+        const pIdx = parseInt(input.dataset.playerIdx, 10);
+        data.teams[tIdx].players[pIdx].number = parseInt(input.value, 10) || null;
+      });
+      saveData();
+    });
+
+    // ── Spielplan ──
+
+    function renderMatchTable() {
+      const tbody = document.getElementById('match-table-body');
+      if (data.matches.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Keine Spiele geplant.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.matches.map((match, idx) => `
+        <tr>
+          <td>${match.time}</td>
+          <td>${match.sport} ${match.emoji || SPORT_EMOJIS[match.sport] || ''}</td>
+          <td>${escapeHtml(getTeamName(match.teamA))}</td>
+          <td>${escapeHtml(getTeamName(match.teamB))}</td>
+          <td>${statusLabel(match.status)}</td>
+          <td>
+            <div class="table-actions">
+              <button class="btn btn-primary btn-icon btn-move-up" data-idx="${idx}" ${idx === 0 ? 'disabled' : ''}>↑</button>
+              <button class="btn btn-primary btn-icon btn-move-down" data-idx="${idx}" ${idx === data.matches.length - 1 ? 'disabled' : ''}>↓</button>
+              <button class="btn btn-red btn-small btn-delete-match" data-idx="${idx}">🗑</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      tbody.querySelectorAll('.btn-move-up').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.idx, 10);
+          if (idx > 0) {
+            [data.matches[idx - 1], data.matches[idx]] = [data.matches[idx], data.matches[idx - 1]];
+            renderAll();
+          }
+        });
+      });
+
+      tbody.querySelectorAll('.btn-move-down').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.idx, 10);
+          if (idx < data.matches.length - 1) {
+            [data.matches[idx], data.matches[idx + 1]] = [data.matches[idx + 1], data.matches[idx]];
+            renderAll();
+          }
+        });
+      });
+
+      tbody.querySelectorAll('.btn-delete-match').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.idx, 10);
+          data.matches.splice(idx, 1);
+          renderAll();
+        });
+      });
+    }
+
+    function statusLabel(status) {
+      switch (status) {
+        case 'running': return 'Läuft';
+        case 'finished': return 'Beendet';
+        default: return 'Ausstehend';
+      }
+    }
+
+    document.getElementById('btn-add-match').addEventListener('click', () => {
+      const time = document.getElementById('match-time').value;
+      const sport = document.getElementById('match-sport').value;
+      const teamA = document.getElementById('match-teamA').value;
+      const teamB = document.getElementById('match-teamB').value;
+
+      if (!time || !teamA || !teamB) return;
+      if (teamA === teamB) {
+        alert('Team A und Team B müssen unterschiedlich sein.');
+        return;
+      }
+
+      data.matches.push({
+        id: 'm' + nextMatchId++,
+        time,
+        sport,
+        emoji: SPORT_EMOJIS[sport] || '🏅',
+        teamA,
+        teamB,
+        scoreA: 0,
+        scoreB: 0,
+        status: 'pending',
+        penalties: [],
+        goals: [],
+        startedAt: null,
+        endedAt: null
+      });
+
+      renderAll();
+      saveData();
+    });
+
+    document.getElementById('btn-save-matches').addEventListener('click', () => {
+      saveData();
+    });
+
+    // ── Live Scoring ──
+
+    function renderPenaltyTypeButtons(matchId, form) {
+      return Object.entries(PENALTY_TYPES).map(([key, val]) => `
+        <button type="button" class="btn btn-small penalty-type-btn ${form.type === key ? 'penalty-type-selected' : ''}"
+                data-match-id="${matchId}" data-type="${key}">
+          ${val.emoji} ${val.label}
+        </button>
+      `).join('');
+    }
+
+    function renderReasonChips(matchId, sport, form) {
+      const reasons = SPORT_REASONS[sport] || [];
+      return reasons.map(r => `
+        <button type="button" class="reason-chip" data-match-id="${matchId}" data-reason="${escapeHtml(r)}">${escapeHtml(r)}</button>
+      `).join('');
+    }
+
+    function renderPlayerOptions(teamId, selectedId) {
+      const players = getTeamPlayers(teamId);
+      let html = '<option value="">— Spieler wählen (optional) —</option>';
+      players.forEach(p => {
+        const label = (p.number ? '#' + p.number + ' ' : '') + p.name;
+        html += `<option value="${p.id}" ${selectedId === p.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+      });
+      return html;
+    }
+
+    function renderPenaltyList(match) {
+      const penalties = match.penalties || [];
+      if (penalties.length === 0) return '';
+      return `
+        <div class="admin-penalty-list">
+          <div class="penalties-label">Eingetragene Strafen:</div>
+          ${penalties.map(p => {
+            const teamName = p.team === 'A' ? getTeamName(match.teamA) : getTeamName(match.teamB);
+            const typeInfo = PENALTY_TYPES[p.type] || { emoji: '⚠️', label: p.type };
+            const minuteStr = p.minute ? p.minute + "'" : '';
+            const playerStr = p.playerId ? ' (' + escapeHtml(getPlayerName(p.playerId)) + ')' : '';
+            const noteStr = p.customNote ? ' — „' + escapeHtml(p.customNote) + '"' : '';
+            return `
+              <div class="admin-penalty-item">
+                <span>${minuteStr} ${typeInfo.emoji} ${escapeHtml(teamName)}${playerStr} — <strong>${escapeHtml(p.reason)}</strong>${noteStr}</span>
+                <button class="btn btn-red btn-small btn-delete-penalty" data-match-id="${match.id}" data-penalty-id="${p.id}">🗑 Entfernen</button>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    function renderGoalsList(match) {
+      const goals = match.goals || [];
+      if (goals.length === 0) return '';
+      const isVolleyball = match.sport === 'Volleyball';
+      const emoji = isVolleyball ? '🏐' : '⚽';
+      const label = isVolleyball ? 'Punkteverlauf' : 'Torschützen';
+      return `
+        <div class="admin-goals-list">
+          <div class="goals-label">${label}:</div>
+          ${goals.map(g => {
+            const side = g.team === 'A' ? '← links' : 'rechts →';
+            const playerName = g.playerId ? getPlayerName(g.playerId) : (isVolleyball ? 'Punkt' : 'Tor');
+            const minuteStr = g.minute ? g.minute + "'" : '';
+            return `<div class="admin-goal-item">${emoji} ${minuteStr} <strong>${side}</strong> — ${escapeHtml(playerName)}</div>`;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    function renderPenaltyPanel(match) {
+      const form = getPenaltyForm(match.id);
+      const isOpen = expandedPenaltyPanels.has(match.id);
+      const teamId = form.team === 'A' ? match.teamA : match.teamB;
+      return `
+        <div class="penalty-toggle-wrap">
+          <button type="button" class="btn btn-red btn-small btn-toggle-penalty" data-match-id="${match.id}">
+            ⚠️ Strafe vergeben ${isOpen ? '▲' : '▼'}
+          </button>
+        </div>
+        ${isOpen ? `
+          <div class="penalty-form" data-match-id="${match.id}">
+            <div class="penalty-form-title">Strafe eintragen</div>
+            <div class="penalty-form-row">
+              <span class="penalty-label">Team:</span>
+              <button type="button" class="btn btn-small penalty-team-btn ${form.team === 'A' ? 'penalty-team-selected' : ''}"
+                      data-match-id="${match.id}" data-team="A">${escapeHtml(getTeamName(match.teamA))}</button>
+              <button type="button" class="btn btn-small penalty-team-btn ${form.team === 'B' ? 'penalty-team-selected' : ''}"
+                      data-match-id="${match.id}" data-team="B">${escapeHtml(getTeamName(match.teamB))}</button>
+            </div>
+            <div class="penalty-form-row">
+              <span class="penalty-label">Spieler:</span>
+              <select class="penalty-player-select" data-match-id="${match.id}">
+                ${renderPlayerOptions(teamId, form.playerId)}
+              </select>
+            </div>
+            <div class="penalty-form-row">
+              <span class="penalty-label">Karte/Typ:</span>
+              <div class="penalty-type-grid">${renderPenaltyTypeButtons(match.id, form)}</div>
+            </div>
+            <div class="penalty-form-row">
+              <span class="penalty-label">Minute:</span>
+              <input type="number" class="penalty-minute" data-match-id="${match.id}" min="1" max="99"
+                     value="${form.minute}" placeholder="z.B. 23">
+            </div>
+            <div class="penalty-form-row">
+              <span class="penalty-label">Schnellgrund:</span>
+              <div class="reason-chips">${renderReasonChips(match.id, match.sport, form)}</div>
+            </div>
+            <div class="penalty-form-row penalty-reason-row">
+              <span class="penalty-label">Begründung:</span>
+              <input type="text" class="penalty-reason" data-match-id="${match.id}"
+                     value="${escapeHtml(form.reason)}" placeholder="Begründung für die Strafe eingeben…">
+            </div>
+            <div class="penalty-form-row">
+              <span class="penalty-label">Zusatznotiz:</span>
+              <textarea class="penalty-note" data-match-id="${match.id}" maxlength="200"
+                        placeholder="Weitere Details (optional)">${escapeHtml(form.customNote)}</textarea>
+            </div>
+            <button type="button" class="btn btn-red btn-save-penalty" data-match-id="${match.id}">🚨 Strafe speichern</button>
+          </div>
+        ` : ''}
+        ${renderPenaltyList(match)}
+      `;
+    }
+
+    function renderScoring() {
+      const list = document.getElementById('scoring-list');
+      const active = data.matches.filter(m => m.status === 'running' || m.status === 'pending');
+
+      if (active.length === 0) {
+        list.innerHTML = '<div class="empty-state">Keine laufenden oder ausstehenden Spiele.</div>';
+        return;
+      }
+
+      list.innerHTML = active.map(match => {
+        const emoji = match.emoji || SPORT_EMOJIS[match.sport] || '';
+        const startBtn = match.status === 'pending'
+          ? `<button class="btn btn-green btn-small btn-start" data-id="${match.id}">▶ Starten</button>`
+          : `<button class="btn btn-red btn-small btn-stop" data-id="${match.id}">■ Beenden</button>`;
+
+        const remaining = getRemainingSeconds(match);
+        const timerHtml = match.status === 'running' && match.startedAt
+          ? `<span class="admin-timer ${remaining === 0 ? 'timer-expired' : ''}" data-id="${match.id}">⏱ ${remaining !== null ? formatCountdown(remaining) : '--:--'}</span>`
+          : '';
+
+        return `
+          <div class="scoring-row ${remaining === 0 ? 'timer-flash' : ''}" data-match-id="${match.id}">
+            <div class="scoring-match-info">${match.time} — ${match.sport} ${emoji} ${timerHtml}</div>
+            <span class="scoring-team">${escapeHtml(getTeamName(match.teamA))}</span>
+            <div class="scoring-controls">
+              <button class="btn-score btn-score-minus-a" data-id="${match.id}">−</button>
+              <span class="scoring-score">${match.scoreA}</span>
+              <button class="btn-score btn-score-plus-a" data-id="${match.id}">+</button>
+            </div>
+            <span style="font-weight:700; font-size:1.25rem;">:</span>
+            <div class="scoring-controls">
+              <button class="btn-score btn-score-minus-b" data-id="${match.id}">−</button>
+              <span class="scoring-score">${match.scoreB}</span>
+              <button class="btn-score btn-score-plus-b" data-id="${match.id}">+</button>
+            </div>
+            <span class="scoring-team">${escapeHtml(getTeamName(match.teamB))}</span>
+            <div class="scoring-actions">
+              ${startBtn}
+              <button class="btn btn-primary btn-small btn-send-push" data-id="${match.id}">📢 Push senden</button>
+              <button class="btn btn-gray btn-small btn-reset-match" data-id="${match.id}">↺ Reset 0:0</button>
+            </div>
+            ${renderGoalsList(match)}
+            ${renderPenaltyPanel(match)}
+          </div>
+        `;
+      }).join('');
+
+      bindScoringEvents();
+      startTimerInterval();
+    }
+
+    function bindScoringEvents() {
+      document.querySelectorAll('.btn-score-plus-a').forEach(btn => {
+        btn.addEventListener('click', () => openGoalPicker(btn.dataset.id, 'A'));
+      });
+      document.querySelectorAll('.btn-score-minus-a').forEach(btn => {
+        btn.addEventListener('click', () => adjustScore(btn.dataset.id, 'A', -1));
+      });
+      document.querySelectorAll('.btn-score-plus-b').forEach(btn => {
+        btn.addEventListener('click', () => openGoalPicker(btn.dataset.id, 'B'));
+      });
+      document.querySelectorAll('.btn-score-minus-b').forEach(btn => {
+        btn.addEventListener('click', () => adjustScore(btn.dataset.id, 'B', -1));
+      });
+      document.querySelectorAll('.btn-start').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const match = data.matches.find(m => m.id === btn.dataset.id);
+          if (match) {
+            match.status = 'running';
+            match.startedAt = new Date().toISOString();
+            match.endedAt = null;
+            timerExpiredMatches.delete(match.id);
+            saveData().then(() => {
+              if (autoPushOnStart) sendMatchPush(match.id);
+            });
+            renderAll();
+          }
+        });
+      });
+      document.querySelectorAll('.btn-send-push').forEach(btn => {
+        btn.addEventListener('click', () => sendMatchPush(btn.dataset.id));
+      });
+      document.querySelectorAll('.btn-stop').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const match = data.matches.find(m => m.id === btn.dataset.id);
+          if (match) {
+            match.status = 'finished';
+            match.endedAt = new Date().toISOString();
+            saveData();
+            renderAll();
+          }
+        });
+      });
+      document.querySelectorAll('.btn-reset-match').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const match = data.matches.find(m => m.id === btn.dataset.id);
+          if (match) {
+            match.scoreA = 0;
+            match.scoreB = 0;
+            match.goals = [];
+            saveData();
+            renderAll();
+          }
+        });
+      });
+
+      document.querySelectorAll('.btn-toggle-penalty').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.matchId;
+          if (expandedPenaltyPanels.has(id)) expandedPenaltyPanels.delete(id);
+          else expandedPenaltyPanels.add(id);
+          renderScoring();
+        });
+      });
+
+      document.querySelectorAll('.penalty-team-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const form = getPenaltyForm(btn.dataset.matchId);
+          form.team = btn.dataset.team;
+          form.playerId = '';
+          renderScoring();
+        });
+      });
+
+      document.querySelectorAll('.penalty-player-select').forEach(sel => {
+        sel.addEventListener('change', () => {
+          getPenaltyForm(sel.dataset.matchId).playerId = sel.value;
+        });
+      });
+
+      document.querySelectorAll('.penalty-type-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const form = getPenaltyForm(btn.dataset.matchId);
+          form.type = btn.dataset.type;
+          renderScoring();
+        });
+      });
+
+      document.querySelectorAll('.penalty-minute').forEach(input => {
+        input.addEventListener('input', () => {
+          getPenaltyForm(input.dataset.matchId).minute = input.value;
+        });
+      });
+
+      document.querySelectorAll('.penalty-reason').forEach(input => {
+        input.addEventListener('input', () => {
+          getPenaltyForm(input.dataset.matchId).reason = input.value;
+        });
+      });
+
+      document.querySelectorAll('.penalty-note').forEach(input => {
+        input.addEventListener('input', () => {
+          getPenaltyForm(input.dataset.matchId).customNote = input.value;
+        });
+      });
+
+      document.querySelectorAll('.reason-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const form = getPenaltyForm(btn.dataset.matchId);
+          form.reason = btn.dataset.reason;
+          renderScoring();
+        });
+      });
+
+      document.querySelectorAll('.btn-save-penalty').forEach(btn => {
+        btn.addEventListener('click', () => savePenalty(btn.dataset.matchId));
+      });
+
+      document.querySelectorAll('.btn-delete-penalty').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const match = data.matches.find(m => m.id === btn.dataset.matchId);
+          if (!match) return;
+          match.penalties = (match.penalties || []).filter(p => p.id !== btn.dataset.penaltyId);
+          saveData();
+          renderAll();
+        });
+      });
+    }
+
+    function savePenalty(matchId) {
+      const match = data.matches.find(m => m.id === matchId);
+      const form = getPenaltyForm(matchId);
+      if (!match || !form.reason.trim()) {
+        alert('Bitte eine Begründung für die Strafe eingeben.');
+        return;
+      }
+
+      const now = new Date();
+      const timestamp = String(now.getHours()).padStart(2, '0') + ':' +
+        String(now.getMinutes()).padStart(2, '0') + ':' +
+        String(now.getSeconds()).padStart(2, '0');
+
+      if (!match.penalties) match.penalties = [];
+      match.penalties.push({
+        id: 'p' + Date.now() + Math.random().toString(36).slice(2, 7),
+        team: form.team,
+        playerId: form.playerId || null,
+        type: form.type,
+        reason: form.reason.trim(),
+        customNote: form.customNote.trim(),
+        minute: form.minute ? parseInt(form.minute, 10) : null,
+        timestamp
+      });
+
+      resetPenaltyForm(matchId);
+      saveData();
+      renderAll();
+    }
+
+    function getMatchMinute(match) {
+      if (!match.startedAt) return null;
+      const elapsed = Math.floor((Date.now() - new Date(match.startedAt).getTime()) / 60000);
+      return Math.min(99, Math.max(1, elapsed + 1));
+    }
+
+    function openGoalPicker(matchId, side) {
+      const match = data.matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      const teamId = side === 'A' ? match.teamA : match.teamB;
+      const players = getTeamPlayers(teamId);
+      const teamName = getTeamName(teamId);
+      const isVolleyball = match.sport === 'Volleyball';
+      const pointEmoji = isVolleyball ? '🏐' : '⚽';
+      const pointLabel = isVolleyball ? 'Punkt' : 'Tor';
+
+      pendingGoal = { matchId, side };
+
+      document.getElementById('goal-modal-title').textContent =
+        isVolleyball ? '🏐 Wer hat den Punkt gemacht?' : '⚽ Wer hat getroffen?';
+      document.getElementById('goal-modal-team').textContent = teamName;
+
+      const list = document.getElementById('goal-player-list');
+      if (players.length === 0) {
+        list.innerHTML = `
+          <p class="modal-hint">Keine Spieler im Team. ${pointLabel} wird ohne Spieler gezählt.</p>
+          <button class="btn btn-primary goal-pick-btn" data-player-id="">${pointEmoji} ${pointLabel} eintragen (ohne Spieler)</button>
+        `;
+      } else {
+        list.innerHTML = players.map(p => {
+          const label = (p.number ? '#' + p.number + ' ' : '') + p.name;
+          return `<button class="btn btn-primary goal-pick-btn" data-player-id="${p.id}">${pointEmoji} ${escapeHtml(label)}</button>`;
+        }).join('') + `<button class="btn btn-gray goal-pick-btn" data-player-id="">Ohne Spieler</button>`;
+      }
+
+      list.querySelectorAll('.goal-pick-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          recordGoal(matchId, side, btn.dataset.playerId || null);
+          closeGoalModal();
+        });
+      });
+
+      document.getElementById('goal-modal').style.display = 'flex';
+    }
+
+    function closeGoalModal() {
+      document.getElementById('goal-modal').style.display = 'none';
+      pendingGoal = null;
+    }
+
+    document.getElementById('goal-modal-cancel').addEventListener('click', closeGoalModal);
+    document.getElementById('goal-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'goal-modal') closeGoalModal();
+    });
+
+    function recordGoal(matchId, side, playerId) {
+      const match = data.matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      if (!match.goals) match.goals = [];
+      const now = new Date();
+      match.goals.push({
+        id: 'g' + Date.now() + Math.random().toString(36).slice(2, 7),
+        team: side,
+        playerId: playerId,
+        minute: getMatchMinute(match),
+        timestamp: String(now.getHours()).padStart(2, '0') + ':' +
+          String(now.getMinutes()).padStart(2, '0') + ':' +
+          String(now.getSeconds()).padStart(2, '0')
+      });
+
+      if (side === 'A') match.scoreA++;
+      else match.scoreB++;
+
+      saveData();
+      renderAll();
+    }
+
+    function adjustScore(matchId, side, delta) {
+      const match = data.matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      if (delta < 0) {
+        if (!match.goals) match.goals = [];
+        const teamGoals = match.goals.filter(g => g.team === side);
+        if (teamGoals.length > 0) {
+          const lastGoal = teamGoals[teamGoals.length - 1];
+          match.goals = match.goals.filter(g => g.id !== lastGoal.id);
+        }
+        if (side === 'A') match.scoreA = Math.max(0, match.scoreA + delta);
+        else match.scoreB = Math.max(0, match.scoreB + delta);
+      }
+
+      saveData();
+      renderAll();
+    }
+
+    // ── Quick Actions ──
+
+    document.getElementById('btn-reset-scores').addEventListener('click', () => {
+      if (!confirm('Alle Ergebnisse auf 0:0 zurücksetzen?')) return;
+      data.matches.forEach(m => { m.scoreA = 0; m.scoreB = 0; m.goals = []; });
+      saveData();
+      renderAll();
+    });
+
+    document.getElementById('btn-reset-status').addEventListener('click', () => {
+      if (!confirm('Alle Spiele auf Ausstehend setzen?')) return;
+      data.matches.forEach(m => {
+        m.status = 'pending';
+        m.startedAt = null;
+        m.endedAt = null;
+        m.goals = [];
+        m.scoreA = 0;
+        m.scoreB = 0;
+      });
+      timerExpiredMatches.clear();
+      saveData();
+      renderAll();
+    });
+
+    // ── Helpers ──
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
+    }
+
+    function renderAll() {
+      renderTeams();
+      renderPlayers();
+      renderMatchTable();
+      renderScoring();
+      switchTab(activeTab);
+      updatePushStatus();
+    }
+
+    fetch('/api/data')
+      .then(res => res.json())
+      .then(onDataUpdate)
+      .catch(err => console.error('Failed to load data:', err));
+
+    const socket = io();
+    socket.on('update', onDataUpdate);
+  </script>
+</body>
+</html>

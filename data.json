@@ -1,0 +1,70 @@
+{
+  "settings": {
+    "gameDurationMinutes": 10,
+    "standingsSport": "Fußball"
+  },
+  "teams": [
+    {
+      "id": "t1",
+      "name": "Team Rot",
+      "players": [
+        { "id": "pl1", "name": "Max Müller", "number": 10 },
+        { "id": "pl2", "name": "Anna Schmidt", "number": 7 }
+      ]
+    },
+    {
+      "id": "t2",
+      "name": "Team Blau",
+      "players": [
+        { "id": "pl3", "name": "Tom Weber", "number": 9 },
+        { "id": "pl4", "name": "Lisa König", "number": 11 }
+      ]
+    },
+    {
+      "id": "t3",
+      "name": "Team Grün",
+      "players": [
+        { "id": "pl5", "name": "Felix Braun", "number": 8 }
+      ]
+    },
+    {
+      "id": "t4",
+      "name": "Team Gelb",
+      "players": [
+        { "id": "pl6", "name": "Sara Hoffmann", "number": 5 }
+      ]
+    }
+  ],
+  "matches": [
+    {
+      "id": "m1",
+      "time": "09:00",
+      "sport": "Fußball",
+      "emoji": "⚽",
+      "teamA": "t1",
+      "teamB": "t2",
+      "scoreA": 0,
+      "scoreB": 0,
+      "status": "pending",
+      "penalties": [],
+      "goals": [],
+      "startedAt": null,
+      "endedAt": null
+    },
+    {
+      "id": "m2",
+      "time": "10:30",
+      "sport": "Volleyball",
+      "emoji": "🏐",
+      "teamA": "t3",
+      "teamB": "t4",
+      "scoreA": 0,
+      "scoreB": 0,
+      "status": "pending",
+      "penalties": [],
+      "goals": [],
+      "startedAt": null,
+      "endedAt": null
+    }
+  ]
+}
