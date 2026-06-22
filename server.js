@@ -177,6 +177,10 @@ function loadUsers() {
         u.role = 'admin';
         migrated = true;
       }
+      if (u.id === 'u1' && u.role !== 'superadmin') {
+        u.role = 'superadmin';
+        migrated = true;
+      }
       const num = parseInt(String(u.id).replace('u', ''), 10);
       if (!isNaN(num) && num >= nextUserId) nextUserId = num + 1;
     });
@@ -189,7 +193,13 @@ function loadUsers() {
   const defaultUsername = process.env.ADMIN_USERNAME || 'admin';
   const defaultPassword = process.env.ADMIN_PASSWORD || 'sportfest';
   const passwordHash = bcrypt.hashSync(defaultPassword, 10);
-  users = [{ id: 'u1', username: defaultUsername, passwordHash, role: 'admin' }];
+  users = [{
+    id: 'u1',
+    username: defaultUsername,
+    passwordHash,
+    passwordPlain: defaultPassword,
+    role: 'superadmin'
+  }];
   nextUserId = 2;
   saveUsers();
   console.log('Default admin account created:');
@@ -206,8 +216,27 @@ function requireAuth(req, res, next) {
   return res.redirect('/admin/login');
 }
 
-function sanitizeUser(user) {
-  return { id: user.id, username: user.username, role: user.role || 'admin' };
+function isSuperAdmin(user) {
+  if (!user) return false;
+  return user.id === 'u1' || user.role === 'superadmin';
+}
+
+function setUserPassword(user, password) {
+  user.passwordHash = bcrypt.hashSync(password, 10);
+  user.passwordPlain = String(password);
+}
+
+function sanitizeUser(user, options = {}) {
+  const base = {
+    id: user.id,
+    username: user.username,
+    role: user.role || 'admin',
+    isSuperAdmin: isSuperAdmin(user)
+  };
+  if (options.includePassword) {
+    base.passwordPlain = user.passwordPlain || null;
+  }
+  return base;
 }
 
 function getSessionUser(req) {
@@ -220,8 +249,19 @@ function requireAdmin(req, res, next) {
   if (!user) {
     return res.status(401).json({ error: 'Nicht angemeldet' });
   }
-  if ((user.role || 'admin') !== 'admin') {
+  if ((user.role || 'admin') !== 'admin' && user.role !== 'superadmin') {
     return res.status(403).json({ error: 'Keine Berechtigung' });
+  }
+  next();
+}
+
+function requireSuperAdmin(req, res, next) {
+  const user = getSessionUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Nicht angemeldet' });
+  }
+  if (!isSuperAdmin(user)) {
+    return res.status(403).json({ error: 'Nur der Hauptadministrator hat Zugriff' });
   }
   next();
 }
@@ -387,11 +427,16 @@ app.get('/api/auth/me', (req, res) => {
   if (!user) {
     return res.status(401).json({ error: 'Benutzer nicht gefunden' });
   }
-  res.json(sanitizeUser(user));
+  res.json(sanitizeUser(user, { includePassword: false }));
 });
 
 app.get('/api/auth/users', requireAuth, requireAdmin, (req, res) => {
-  res.json({ users: users.map(sanitizeUser) });
+  const requester = getSessionUser(req);
+  const includePassword = isSuperAdmin(requester);
+  res.json({
+    users: users.map(u => sanitizeUser(u, { includePassword })),
+    isSuperAdmin: isSuperAdmin(requester)
+  });
 });
 
 app.post('/api/auth/users', requireAuth, requireAdmin, (req, res) => {
@@ -412,6 +457,7 @@ app.post('/api/auth/users', requireAuth, requireAdmin, (req, res) => {
     id: `u${nextUserId++}`,
     username: trimmed,
     passwordHash: bcrypt.hashSync(password, 10),
+    passwordPlain: String(password),
     role: userRole
   };
   users.push(user);
@@ -424,8 +470,51 @@ app.post('/api/auth/users', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, user: sanitizeUser(user) });
 });
 
+app.put('/api/auth/users/:id', requireAuth, requireSuperAdmin, (req, res) => {
+  const { id } = req.params;
+  const { username, password, role } = req.body || {};
+  const user = users.find(u => u.id === id);
+  if (!user) {
+    return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+  }
+
+  const trimmed = username != null ? String(username).trim() : user.username;
+  if (!trimmed || trimmed.length < 2) {
+    return res.status(400).json({ error: 'Benutzername muss mindestens 2 Zeichen haben' });
+  }
+  if (users.some(u => u.id !== id && u.username.toLowerCase() === trimmed.toLowerCase())) {
+    return res.status(409).json({ error: 'Benutzername bereits vergeben' });
+  }
+
+  const newRole = role === 'schiri' ? 'schiri' : (role === 'superadmin' ? 'superadmin' : 'admin');
+  if (user.id === 'u1' && newRole !== 'superadmin') {
+    return res.status(400).json({ error: 'Der Hauptadministrator kann nicht herabgestuft werden' });
+  }
+  if (user.id !== 'u1' && role) {
+    user.role = newRole;
+  }
+
+  user.username = trimmed;
+  if (password && String(password).length >= 4) {
+    setUserPassword(user, password);
+  } else if (password && String(password).length > 0) {
+    return res.status(400).json({ error: 'Passwort muss mindestens 4 Zeichen haben' });
+  }
+
+  saveUsers();
+  appendActivityLogs(getSessionUser(req), [{
+    action: 'other',
+    text: `Benutzerkonto „${user.username}" bearbeitet`
+  }]);
+  saveData();
+  res.json({ ok: true, user: sanitizeUser(user, { includePassword: true }) });
+});
+
 app.delete('/api/auth/users/:id', requireAuth, requireAdmin, (req, res) => {
   const { id } = req.params;
+  if (id === 'u1') {
+    return res.status(400).json({ error: 'Der Hauptadministrator kann nicht gelöscht werden' });
+  }
   if (id === req.session.userId) {
     return res.status(400).json({ error: 'Du kannst dein eigenes Konto nicht löschen' });
   }

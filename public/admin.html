@@ -163,13 +163,19 @@
     <div class="admin-tab-panel" id="tab-users">
       <section class="section">
         <h2>👤 Benutzerkonten</h2>
-        <p class="section-hint">Lege Konten für Admins und Schiris an. Schiris können Spiele starten/beenden, Punkte und Strafen verwalten.</p>
+        <p class="section-hint" id="users-tab-hint">Lege Konten für Admins und Schiris an. Schiris können Spiele starten/beenden, Punkte und Strafen verwalten.</p>
+        <div class="superadmin-only user-password-toolbar" id="user-password-toolbar" hidden>
+          <button type="button" class="btn btn-gray btn-small" id="btn-toggle-all-passwords">👁 Passwörter anzeigen</button>
+        </div>
         <div id="users-list" class="users-list"></div>
         <div class="user-create-form">
           <h3>Neues Konto anlegen</h3>
           <div class="form-row">
             <input type="text" id="new-username" placeholder="Benutzername" autocomplete="username">
-            <input type="password" id="new-password" placeholder="Passwort (min. 4 Zeichen)" autocomplete="new-password">
+            <div class="password-field-wrap">
+              <input type="password" id="new-password" placeholder="Passwort (min. 4 Zeichen)" autocomplete="new-password">
+              <button type="button" class="pw-toggle-btn" data-target="new-password" aria-label="Passwort anzeigen">👁</button>
+            </div>
             <select id="new-user-role" class="user-role-select">
               <option value="schiri">Schiri — Live-Scoring</option>
               <option value="admin">Administrator — alles</option>
@@ -217,6 +223,29 @@
       <p class="modal-subtitle" id="goal-modal-team"></p>
       <div class="goal-player-list" id="goal-player-list"></div>
       <button class="btn btn-gray btn-small modal-cancel" id="goal-modal-cancel">Abbrechen</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="user-edit-modal" style="display:none;">
+    <div class="modal-box">
+      <h3>Benutzer bearbeiten</h3>
+      <p class="modal-subtitle" id="user-edit-subtitle"></p>
+      <label class="custom-push-label" for="edit-username">Benutzername</label>
+      <input type="text" id="edit-username" class="custom-push-input" autocomplete="username">
+      <label class="custom-push-label" for="edit-password">Neues Passwort</label>
+      <div class="password-field-wrap">
+        <input type="password" id="edit-password" class="custom-push-input" placeholder="Leer lassen = unverändert" autocomplete="new-password">
+        <button type="button" class="pw-toggle-btn" data-target="edit-password" aria-label="Passwort anzeigen">👁</button>
+      </div>
+      <label class="custom-push-label" for="edit-role">Rolle</label>
+      <select id="edit-role" class="user-role-select">
+        <option value="schiri">Schiri — Live-Scoring</option>
+        <option value="admin">Administrator — alles</option>
+      </select>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="btn-save-user-edit">💾 Speichern</button>
+        <button type="button" class="btn btn-gray" id="btn-cancel-user-edit">Abbrechen</button>
+      </div>
     </div>
   </div>
 
@@ -309,10 +338,16 @@
       if (!data.settings.standingsSport) data.settings.standingsSport = 'Fußball';
     }
 
-    const ROLE_LABELS = { admin: 'Administrator', schiri: 'Schiri' };
+    const ROLE_LABELS = { superadmin: 'Hauptadministrator', admin: 'Administrator', schiri: 'Schiri' };
+    let showAllPasswords = false;
+    let editingUserId = null;
 
     function isAdmin() {
-      return currentUser?.role === 'admin';
+      return currentUser?.role === 'admin' || currentUser?.role === 'superadmin' || currentUser?.isSuperAdmin;
+    }
+
+    function isSuperAdmin() {
+      return currentUser?.isSuperAdmin === true || currentUser?.role === 'superadmin';
     }
 
     function isSchiri() {
@@ -357,6 +392,15 @@
       document.getElementById('admin-user-label').textContent = `👤 ${currentUser.username} · ${roleLabel}`;
       document.body.classList.toggle('role-admin', isAdmin());
       document.body.classList.toggle('role-schiri', isSchiri());
+      document.body.classList.toggle('role-superadmin', isSuperAdmin());
+
+      const pwToolbar = document.getElementById('user-password-toolbar');
+      if (pwToolbar) pwToolbar.hidden = !isSuperAdmin();
+
+      const usersHint = document.getElementById('users-tab-hint');
+      if (usersHint && isSuperAdmin()) {
+        usersHint.textContent = 'Als Hauptadministrator siehst du alle Passwörter und kannst Konten bearbeiten.';
+      }
 
       document.querySelectorAll('.admin-tab').forEach(tab => {
         const adminOnly = tab.dataset.tab !== 'live';
@@ -372,6 +416,10 @@
         document.getElementById('live-tab-hint').textContent =
           'Spiele starten und beenden, Punkte eintragen und Strafen vergeben.';
         switchTab('live');
+      } else if (isSuperAdmin()) {
+        document.getElementById('admin-page-title').textContent = '👑 Hauptadmin — Sportfest 2026';
+        document.getElementById('live-tab-hint').textContent =
+          'Spiele starten, Tore eintragen, Strafen vergeben.';
       } else {
         document.getElementById('admin-page-title').textContent = '⚙️ Admin — Sportfest 2026';
         document.getElementById('live-tab-hint').textContent =
@@ -414,15 +462,33 @@
       }
       el.innerHTML = users.map(u => {
         const roleName = ROLE_LABELS[u.role] || u.role || 'Administrator';
+        const pwText = u.passwordPlain
+          ? (showAllPasswords ? escapeHtml(u.passwordPlain) : '••••••••')
+          : '— (nicht gespeichert)';
+        const pwBlock = isSuperAdmin()
+          ? `<div class="user-password-line">Passwort: <code class="user-pw-value">${pwText}</code></div>`
+          : '';
+        const editBtn = isSuperAdmin()
+          ? `<button class="btn btn-primary btn-small btn-edit-user" data-edit-user="${escapeHtml(u.id)}">✏️ Bearbeiten</button>`
+          : '';
+        const deleteBtn = u.id !== 'u1' && u.id !== currentUser?.id
+          ? `<button class="btn btn-red btn-small" data-delete-user="${escapeHtml(u.id)}">Löschen</button>`
+          : (u.id === currentUser?.id
+            ? '<span class="user-row-self">Aktives Konto</span>'
+            : (u.id === 'u1' ? '<span class="user-row-self">Hauptadmin</span>' : ''));
         return `
-        <div class="user-row">
-          <span class="user-row-name">
-            ${escapeHtml(u.username)}${u.id === currentUser?.id ? ' <em>(du)</em>' : ''}
-            <span class="user-role-badge user-role-${escapeHtml(u.role || 'admin')}">${escapeHtml(roleName)}</span>
-          </span>
-          ${u.id !== currentUser?.id
-            ? `<button class="btn btn-red btn-small" data-delete-user="${escapeHtml(u.id)}">Löschen</button>`
-            : '<span class="user-row-self">Aktives Konto</span>'}
+        <div class="user-row ${isSuperAdmin() ? 'user-row-super' : ''}">
+          <div class="user-row-main">
+            <span class="user-row-name">
+              ${escapeHtml(u.username)}${u.id === currentUser?.id ? ' <em>(du)</em>' : ''}
+              <span class="user-role-badge user-role-${escapeHtml(u.role || 'admin')}">${escapeHtml(roleName)}</span>
+            </span>
+            ${pwBlock}
+          </div>
+          <div class="user-row-actions">
+            ${editBtn}
+            ${deleteBtn}
+          </div>
         </div>
       `;
       }).join('');
@@ -443,7 +509,81 @@
           loadUsers();
         });
       });
+
+      el.querySelectorAll('.btn-edit-user').forEach(btn => {
+        btn.addEventListener('click', () => openUserEditModal(btn.dataset.editUser, users));
+      });
     }
+
+    function openUserEditModal(userId, users) {
+      const user = users.find(u => u.id === userId);
+      if (!user) return;
+      editingUserId = userId;
+      document.getElementById('user-edit-subtitle').textContent = `Konto: ${user.username}`;
+      document.getElementById('edit-username').value = user.username;
+      document.getElementById('edit-password').value = '';
+      document.getElementById('edit-role').value = user.role === 'schiri' ? 'schiri' : 'admin';
+      if (user.id === 'u1') {
+        document.getElementById('edit-role').disabled = true;
+      } else {
+        document.getElementById('edit-role').disabled = false;
+      }
+      document.getElementById('user-edit-modal').style.display = 'flex';
+    }
+
+    function closeUserEditModal() {
+      editingUserId = null;
+      document.getElementById('user-edit-modal').style.display = 'none';
+    }
+
+    document.getElementById('btn-cancel-user-edit').addEventListener('click', closeUserEditModal);
+    document.getElementById('user-edit-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'user-edit-modal') closeUserEditModal();
+    });
+
+    document.getElementById('btn-save-user-edit').addEventListener('click', async () => {
+      if (!editingUserId) return;
+      const username = document.getElementById('edit-username').value.trim();
+      const password = document.getElementById('edit-password').value;
+      const role = document.getElementById('edit-role').value;
+      try {
+        const res = await fetch(`/api/auth/users/${editingUserId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ username, password: password || undefined, role })
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error);
+        const savedId = editingUserId;
+        showToast(`Konto „${result.user.username}" gespeichert`);
+        closeUserEditModal();
+        if (savedId === currentUser?.id) {
+          currentUser.username = result.user.username;
+          applyRoleUI();
+        }
+        loadUsers();
+      } catch (e) {
+        showToast(e.message || 'Speichern fehlgeschlagen', true);
+      }
+    });
+
+    document.getElementById('btn-toggle-all-passwords').addEventListener('click', () => {
+      showAllPasswords = !showAllPasswords;
+      document.getElementById('btn-toggle-all-passwords').textContent =
+        showAllPasswords ? '🙈 Passwörter verbergen' : '👁 Passwörter anzeigen';
+      loadUsers();
+    });
+
+    document.querySelectorAll('.pw-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = document.getElementById(btn.dataset.target);
+        if (!input) return;
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.textContent = show ? '🙈' : '👁';
+      });
+    });
 
     document.getElementById('btn-create-user').addEventListener('click', async () => {
       const username = document.getElementById('new-username').value.trim();

@@ -375,6 +375,89 @@ body {
   border-radius: 8px;
 }
 
+.user-row-super {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.user-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-row-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.user-password-line {
+  font-size: 0.8rem;
+  color: #555;
+  margin-top: 0.35rem;
+}
+
+.user-pw-value {
+  font-family: 'Consolas', 'Courier New', monospace;
+  background: #fff;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.user-password-toolbar {
+  margin-bottom: 0.75rem;
+}
+
+.password-field-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 140px;
+}
+
+.password-field-wrap input {
+  width: 100%;
+  padding-right: 2.5rem;
+}
+
+.pw-toggle-btn {
+  position: absolute;
+  right: 0.35rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.25rem 0.4rem;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.pw-toggle-btn:hover {
+  opacity: 1;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.login-form .password-field-wrap input {
+  padding: 0.65rem 2.5rem 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+.user-create-form .password-field-wrap {
+  min-width: 180px;
+}
+
 .user-row-name {
   font-weight: 600;
 }
@@ -907,6 +990,11 @@ tr:last-child td:last-child {
 .user-role-schiri {
   background: #FFF3E0;
   color: #E65100;
+}
+
+.user-role-superadmin {
+  background: #F3E5F5;
+  color: #6A1B9A;
 }
 
 .user-role-select {

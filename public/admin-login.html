@@ -18,7 +18,10 @@
       <input type="text" id="username" name="username" autocomplete="username" required autofocus>
 
       <label for="password">Passwort</label>
-      <input type="password" id="password" name="password" autocomplete="current-password" required>
+      <div class="password-field-wrap">
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+        <button type="button" class="pw-toggle-btn" id="btn-toggle-login-pw" aria-label="Passwort anzeigen">👁</button>
+      </div>
 
       <p class="login-error" id="login-error" style="display:none;"></p>
 
@@ -34,6 +37,15 @@
     const form = document.getElementById('login-form');
     const errorEl = document.getElementById('login-error');
     const btn = document.getElementById('btn-login');
+    const passwordInput = document.getElementById('password');
+    const toggleBtn = document.getElementById('btn-toggle-login-pw');
+
+    toggleBtn.addEventListener('click', () => {
+      const show = passwordInput.type === 'password';
+      passwordInput.type = show ? 'text' : 'password';
+      toggleBtn.textContent = show ? '🙈' : '👁';
+      toggleBtn.setAttribute('aria-label', show ? 'Passwort verbergen' : 'Passwort anzeigen');
+    });
 
     fetch('/api/auth/me', { credentials: 'same-origin' })
       .then(res => {
@@ -54,7 +66,7 @@
           credentials: 'same-origin',
           body: JSON.stringify({
             username: document.getElementById('username').value.trim(),
-            password: document.getElementById('password').value
+            password: passwordInput.value
           })
         });
         const result = await res.json();
