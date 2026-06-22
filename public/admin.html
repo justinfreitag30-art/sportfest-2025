@@ -27,6 +27,7 @@
       <button type="button" class="admin-tab" data-tab="settings">⚙️ Mehr</button>
       <button type="button" class="admin-tab" data-tab="users">👤 Benutzer</button>
       <button type="button" class="admin-tab" data-tab="log">📋 Protokoll</button>
+      <button type="button" class="admin-tab" data-tab="report">📜 Spielbericht</button>
     </nav>
 
     <!-- TAB: Live Scoring -->
@@ -188,6 +189,22 @@
           <button type="button" class="btn btn-gray btn-small" id="btn-refresh-log">🔄 Aktualisieren</button>
         </div>
         <div id="activity-log-list" class="activity-log-list"></div>
+      </section>
+    </div>
+
+    <!-- TAB: Spielbericht (Export) -->
+    <div class="admin-tab-panel" id="tab-report">
+      <section class="section">
+        <h2>📜 Spielbericht</h2>
+        <p class="section-hint">Detailliertes Spielprotokoll mit Toren, Strafen und Zeiten — zum Exportieren nach dem Spiel.</p>
+        <div class="report-toolbar form-row">
+          <select id="report-match-select" class="report-select">
+            <option value="all">Alle Spiele</option>
+          </select>
+          <button type="button" class="btn btn-primary" id="btn-export-txt">📄 Als Text (.txt)</button>
+          <button type="button" class="btn btn-gray" id="btn-export-csv">📊 Als Tabelle (.csv)</button>
+        </div>
+        <pre class="report-preview" id="report-preview">Spiel auswählen…</pre>
       </section>
     </div>
 
@@ -515,6 +532,285 @@
 
     document.getElementById('btn-refresh-log').addEventListener('click', loadActivityLog);
 
+    // ── Spielbericht ──
+
+    function formatPlayerLabel(playerId) {
+      if (!playerId) return 'unbekannter Spieler';
+      const name = getPlayerName(playerId);
+      return name || 'unbekannter Spieler';
+    }
+
+    function formatClockTime(iso) {
+      if (!iso) return null;
+      const d = new Date(iso);
+      return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function eventSortKey(minute, timestamp) {
+      if (minute != null && !isNaN(minute)) return Number(minute) * 100;
+      if (timestamp) {
+        const parts = String(timestamp).split(':').map(Number);
+        return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+      }
+      return 99999;
+    }
+
+    function buildMatchTimeline(match) {
+      const isVolleyball = match.sport === 'Volleyball';
+      const pointWord = isVolleyball ? 'Punkt' : 'Tor';
+      const teamAName = getTeamName(match.teamA);
+      const teamBName = getTeamName(match.teamB);
+      const events = [];
+
+      (match.goals || []).forEach((g, i) => {
+        events.push({
+          sort: eventSortKey(g.minute, g.timestamp) + i * 0.01,
+          type: pointWord,
+          minute: g.minute,
+          timestamp: g.timestamp,
+          team: g.team === 'A' ? teamAName : teamBName,
+          opponent: g.team === 'A' ? teamBName : teamAName,
+          player: formatPlayerLabel(g.playerId),
+          goal: g
+        });
+      });
+
+      (match.penalties || []).forEach((p, i) => {
+        const typeInfo = PENALTY_TYPES[p.type] || { emoji: '⚠️', label: p.type };
+        events.push({
+          sort: eventSortKey(p.minute, p.timestamp) + i * 0.01 + 0.5,
+          type: 'Strafe',
+          minute: p.minute,
+          timestamp: p.timestamp,
+          team: p.team === 'A' ? teamAName : teamBName,
+          opponent: p.team === 'A' ? teamBName : teamAName,
+          player: p.playerId ? formatPlayerLabel(p.playerId) : 'ohne Spielerzuordnung',
+          penaltyType: typeInfo.label,
+          reason: p.reason,
+          note: p.customNote
+        });
+      });
+
+      events.sort((a, b) => a.sort - b.sort);
+
+      let scoreA = 0;
+      let scoreB = 0;
+      const lines = [];
+
+      if (match.startedAt) {
+        lines.push(`▶ Spielbeginn um ${formatClockTime(match.startedAt)} Uhr`);
+      }
+
+      events.forEach(ev => {
+        if (ev.type === pointWord) {
+          if (ev.goal.team === 'A') scoreA++;
+          else scoreB++;
+          const minStr = ev.minute ? `${ev.minute}. Minute` : (ev.timestamp ? `Uhrzeit ${ev.timestamp}` : 'Minute unbekannt');
+          lines.push(
+            `${minStr}: ${ev.player} erzielt ein ${pointWord} für ${ev.team} gegen ${ev.opponent} (Zwischenstand ${scoreA}:${scoreB})`
+          );
+        } else {
+          const minStr = ev.minute ? `${ev.minute}. Minute` : (ev.timestamp ? `Uhrzeit ${ev.timestamp}` : 'Minute unbekannt');
+          let line = `${minStr}: ${ev.penaltyType} für ${ev.player}, ${ev.team} — ${ev.reason}`;
+          if (ev.note) line += ` (${ev.note})`;
+          lines.push(line);
+        }
+      });
+
+      if (match.endedAt) {
+        lines.push(`■ Spielende um ${formatClockTime(match.endedAt)} Uhr — Endstand ${match.scoreA}:${match.scoreB}`);
+      } else if (match.status === 'running') {
+        lines.push(`⏱ Spiel läuft — aktueller Stand ${match.scoreA}:${match.scoreB}`);
+      } else if (match.status === 'finished') {
+        lines.push(`Endstand ${match.scoreA}:${match.scoreB}`);
+      }
+
+      if (lines.length === 0 || (lines.length === 1 && !events.length)) {
+        if (!match.startedAt && events.length === 0) {
+          lines.push('Noch keine Ereignisse eingetragen.');
+        }
+      }
+
+      return lines;
+    }
+
+    function buildMatchReportHeader(match) {
+      const emoji = match.emoji || SPORT_EMOJIS[match.sport] || '';
+      const status = match.status === 'running' ? 'Läuft' : match.status === 'finished' ? 'Beendet' : 'Ausstehend';
+      return [
+        '═══════════════════════════════════════════════════════',
+        `${getTeamName(match.teamA)} vs ${getTeamName(match.teamB)}`,
+        `${match.sport} ${emoji} | ${match.time} Uhr | ${status}`,
+        `Endstand: ${match.scoreA}:${match.scoreB}`,
+        '───────────────────────────────────────────────────────'
+      ];
+    }
+
+    function buildMatchReportText(match) {
+      return [...buildMatchReportHeader(match), ...buildMatchTimeline(match), ''].join('\n');
+    }
+
+    function buildAllReportsText() {
+      const header = [
+        'SPORTFEST 2026 — SPIELBERICHTE',
+        `Erstellt: ${new Date().toLocaleString('de-DE')}`,
+        `Anzahl Spiele: ${data.matches.length}`,
+        '',
+        ''
+      ].join('\n');
+      if (!data.matches.length) return header + 'Keine Spiele vorhanden.\n';
+      return header + data.matches.map(buildMatchReportText).join('\n');
+    }
+
+    function buildReportCsv(matches) {
+      const rows = [[
+        'Spiel', 'Uhrzeit', 'Sport', 'Status', 'Team A', 'Team B', 'Endstand',
+        'Minute', 'Uhrzeit Ereignis', 'Typ', 'Spieler', 'Team', 'Gegner', 'Details', 'Zwischenstand'
+      ]];
+
+      matches.forEach(match => {
+        const base = [
+          `${getTeamName(match.teamA)} vs ${getTeamName(match.teamB)}`,
+          match.time,
+          match.sport,
+          match.status,
+          getTeamName(match.teamA),
+          getTeamName(match.teamB),
+          `${match.scoreA}:${match.scoreB}`
+        ];
+
+        const isVolleyball = match.sport === 'Volleyball';
+        const pointWord = isVolleyball ? 'Punkt' : 'Tor';
+        const teamAName = getTeamName(match.teamA);
+        const teamBName = getTeamName(match.teamB);
+        const events = [];
+
+        (match.goals || []).forEach((g, i) => {
+          events.push({ sort: eventSortKey(g.minute, g.timestamp) + i * 0.01, kind: pointWord, g });
+        });
+        (match.penalties || []).forEach((p, i) => {
+          events.push({ sort: eventSortKey(p.minute, p.timestamp) + i * 0.01 + 0.5, kind: 'Strafe', p });
+        });
+        events.sort((a, b) => a.sort - b.sort);
+
+        let scoreA = 0;
+        let scoreB = 0;
+
+        if (!events.length) {
+          rows.push([...base, '', '', '—', '', '', '', 'Keine Ereignisse', '']);
+          return;
+        }
+
+        events.forEach(ev => {
+          if (ev.kind === pointWord) {
+            const g = ev.g;
+            if (g.team === 'A') scoreA++;
+            else scoreB++;
+            const team = g.team === 'A' ? teamAName : teamBName;
+            const opponent = g.team === 'A' ? teamBName : teamAName;
+            rows.push([
+              ...base,
+              g.minute ?? '',
+              g.timestamp ?? '',
+              pointWord,
+              formatPlayerLabel(g.playerId),
+              team,
+              opponent,
+              `${pointWord} gegen ${opponent}`,
+              `${scoreA}:${scoreB}`
+            ]);
+          } else {
+            const p = ev.p;
+            const typeInfo = PENALTY_TYPES[p.type] || { label: p.type };
+            const team = p.team === 'A' ? teamAName : teamBName;
+            const opponent = p.team === 'A' ? teamBName : teamAName;
+            rows.push([
+              ...base,
+              p.minute ?? '',
+              p.timestamp ?? '',
+              typeInfo.label,
+              p.playerId ? formatPlayerLabel(p.playerId) : '',
+              team,
+              opponent,
+              [p.reason, p.customNote].filter(Boolean).join(' — '),
+              ''
+            ]);
+          }
+        });
+      });
+
+      return rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
+    }
+
+    function downloadFile(filename, content, mime) {
+      const blob = new Blob([content], { type: mime + ';charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function renderMatchReport() {
+      if (!isAdmin()) return;
+      const select = document.getElementById('report-match-select');
+      const preview = document.getElementById('report-preview');
+
+      const current = select.value;
+      select.innerHTML = '<option value="all">Alle Spiele</option>' +
+        data.matches.map(m => {
+          const label = `${m.time} — ${getTeamName(m.teamA)} vs ${getTeamName(m.teamB)} (${m.sport})`;
+          return `<option value="${m.id}">${escapeHtml(label)}</option>`;
+        }).join('');
+
+      if (current && [...select.options].some(o => o.value === current)) {
+        select.value = current;
+      }
+
+      if (select.value === 'all') {
+        preview.textContent = buildAllReportsText();
+      } else {
+        const match = data.matches.find(m => m.id === select.value);
+        preview.textContent = match ? buildMatchReportText(match) : 'Spiel nicht gefunden.';
+      }
+    }
+
+    document.getElementById('report-match-select').addEventListener('change', renderMatchReport);
+
+    document.getElementById('btn-export-txt').addEventListener('click', () => {
+      const select = document.getElementById('report-match-select');
+      const date = new Date().toISOString().slice(0, 10);
+      if (select.value === 'all') {
+        downloadFile(`sportfest-spielberichte-${date}.txt`, buildAllReportsText(), 'text/plain');
+      } else {
+        const match = data.matches.find(m => m.id === select.value);
+        if (!match) return;
+        const name = `${getTeamName(match.teamA)}-vs-${getTeamName(match.teamB)}`.replace(/[^\wäöüÄÖÜß-]+/gi, '-');
+        downloadFile(`spielbericht-${name}.txt`, buildMatchReportText(match), 'text/plain');
+      }
+      showToast('Spielbericht exportiert');
+    });
+
+    document.getElementById('btn-export-csv').addEventListener('click', () => {
+      const select = document.getElementById('report-match-select');
+      const date = new Date().toISOString().slice(0, 10);
+      const matches = select.value === 'all'
+        ? data.matches
+        : data.matches.filter(m => m.id === select.value);
+      if (!matches.length) {
+        showToast('Kein Spiel zum Exportieren', true);
+        return;
+      }
+      const bom = '\uFEFF';
+      downloadFile(
+        select.value === 'all' ? `sportfest-spielberichte-${date}.csv` : `spielbericht-${date}.csv`,
+        bom + buildReportCsv(matches),
+        'text/csv'
+      );
+      showToast('CSV exportiert');
+    });
+
     function persistChanges(logAction, logText) {
       if (logAction && logText) logActivity(logAction, logText);
       return saveData().catch(err => {
@@ -531,6 +827,7 @@
       document.getElementById('standings-sport').value = data.settings.standingsSport || 'Fußball';
       renderAll();
       if (isAdmin() && activeTab === 'log') loadActivityLog();
+      if (isAdmin() && activeTab === 'report') renderMatchReport();
     }
 
     function getRemainingSeconds(match) {
@@ -728,6 +1025,7 @@
       });
       if (tabId === 'users') loadUsers();
       if (tabId === 'log') loadActivityLog();
+      if (tabId === 'report') renderMatchReport();
     }
 
     document.getElementById('admin-tabs').addEventListener('click', (e) => {
