@@ -64,6 +64,7 @@ function getPublicData() {
 
 const MAX_ACTIVITY_LOG = 500;
 const MAX_ADMIN_CHAT = 300;
+const AUTH_LOG_ACTIONS = new Set(['login', 'logout', 'login-failed']);
 
 function appendAdminChatMessage(user, text) {
   const trimmed = String(text || '').trim();
@@ -107,6 +108,10 @@ function appendActivityLogs(user, entries) {
   if (data.activityLog.length > MAX_ACTIVITY_LOG) {
     data.activityLog = data.activityLog.slice(-MAX_ACTIVITY_LOG);
   }
+}
+
+function notifyActivityLogUpdate() {
+  io.emit('activity-log-update');
 }
 
 function syncSubscriptionsFromData() {
@@ -424,18 +429,34 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(400).json({ error: 'Benutzername und Passwort erforderlich' });
   }
 
-  const user = users.find(u => u.username.toLowerCase() === String(username).trim().toLowerCase());
+  const trimmedUsername = String(username).trim();
+  const user = users.find(u => u.username.toLowerCase() === trimmedUsername.toLowerCase());
   if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+    appendActivityLogs(
+      { id: null, username: trimmedUsername || 'unbekannt', role: '—' },
+      [{ action: 'login-failed', text: 'Anmeldung fehlgeschlagen (falscher Benutzername oder Passwort)' }]
+    );
+    saveData();
+    notifyActivityLogUpdate();
     return res.status(401).json({ error: 'Benutzername oder Passwort falsch' });
   }
 
   req.session.userId = user.id;
   req.session.username = user.username;
   req.session.role = user.role || 'admin';
+  appendActivityLogs(user, [{ action: 'login', text: 'Hat sich angemeldet' }]);
+  saveData();
+  notifyActivityLogUpdate();
   res.json({ ok: true, user: sanitizeUser(user) });
 });
 
 app.post('/api/auth/logout', (req, res) => {
+  const user = getSessionUser(req);
+  if (user) {
+    appendActivityLogs(user, [{ action: 'logout', text: 'Hat sich abgemeldet' }]);
+    saveData();
+    notifyActivityLogUpdate();
+  }
   req.session.destroy(() => {
     res.json({ ok: true });
   });
@@ -626,7 +647,11 @@ app.post('/api/admin-chat', requireAuth, requireAdmin, (req, res) => {
 });
 
 app.get('/api/activity-log', requireAuth, requireAdmin, (req, res) => {
-  const logs = Array.isArray(data.activityLog) ? [...data.activityLog] : [];
+  const viewer = getSessionUser(req);
+  let logs = Array.isArray(data.activityLog) ? [...data.activityLog] : [];
+  if (!isSuperAdmin(viewer)) {
+    logs = logs.filter(entry => !AUTH_LOG_ACTIONS.has(entry.action));
+  }
   logs.reverse();
   res.json({ logs });
 });

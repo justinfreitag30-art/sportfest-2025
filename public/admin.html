@@ -208,7 +208,7 @@
     <div class="admin-tab-panel" id="tab-log">
       <section class="section">
         <h2>📋 Aktivitäts-Protokoll</h2>
-        <p class="section-hint">Wer hat wann Punkte geändert, Strafen vergeben oder Einstellungen angepasst?</p>
+        <p class="section-hint" id="activity-log-hint">Wer hat wann Punkte geändert, Strafen vergeben oder Einstellungen angepasst?</p>
         <div class="activity-log-toolbar">
           <button type="button" class="btn btn-gray btn-small" id="btn-refresh-log">🔄 Aktualisieren</button>
         </div>
@@ -420,6 +420,13 @@
       const usersHint = document.getElementById('users-tab-hint');
       if (usersHint && isSuperAdmin()) {
         usersHint.textContent = 'Als Hauptadministrator siehst du alle Passwörter und kannst Konten bearbeiten.';
+      }
+
+      const logHint = document.getElementById('activity-log-hint');
+      if (logHint) {
+        logHint.textContent = isSuperAdmin()
+          ? 'Als Hauptadministrator siehst du auch An- und Abmeldungen sowie fehlgeschlagene Login-Versuche.'
+          : 'Wer hat wann Punkte geändert, Strafen vergeben oder Einstellungen angepasst?';
       }
 
       document.querySelectorAll('.admin-tab').forEach(tab => {
@@ -750,10 +757,13 @@
       schedule: '📅',
       push: '🔔',
       reset: '🔄',
+      login: '🔓',
+      logout: '🔒',
+      'login-failed': '⛔',
       other: '📝'
     };
 
-    const ROLE_LABELS_LOG = { admin: 'Admin', schiri: 'Schiri' };
+    const ROLE_LABELS_LOG = { superadmin: 'Hauptadmin', admin: 'Admin', schiri: 'Schiri' };
 
     async function loadActivityLog() {
       if (!isAdmin()) return;
@@ -2078,6 +2088,11 @@
         }
         if (activeTab === 'chat') {
           renderAdminChat();
+        }
+      });
+      socket.on('activity-log-update', () => {
+        if (isSuperAdmin() && activeTab === 'log') {
+          loadActivityLog();
         }
       });
     });

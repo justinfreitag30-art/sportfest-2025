@@ -529,6 +529,18 @@ body {
   border-left-color: #757575;
 }
 
+.activity-log-item.activity-login {
+  border-left-color: #2E7D32;
+}
+
+.activity-log-item.activity-logout {
+  border-left-color: #546E7A;
+}
+
+.activity-log-item.activity-login-failed {
+  border-left-color: #C62828;
+}
+
 .activity-log-meta {
   display: flex;
   flex-wrap: wrap;
