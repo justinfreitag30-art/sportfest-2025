@@ -8,30 +8,54 @@
       "id": "t1",
       "name": "Team Rot",
       "players": [
-        { "id": "pl1", "name": "Max Müller", "number": 10 },
-        { "id": "pl2", "name": "Anna Schmidt", "number": 7 }
+        {
+          "id": "pl1",
+          "name": "Max Müller",
+          "number": 10
+        },
+        {
+          "id": "pl2",
+          "name": "Anna Schmidt",
+          "number": 7
+        }
       ]
     },
     {
       "id": "t2",
       "name": "Team Blau",
       "players": [
-        { "id": "pl3", "name": "Tom Weber", "number": 9 },
-        { "id": "pl4", "name": "Lisa König", "number": 11 }
+        {
+          "id": "pl3",
+          "name": "Tom Weber",
+          "number": 9
+        },
+        {
+          "id": "pl4",
+          "name": "Lisa König",
+          "number": 11
+        }
       ]
     },
     {
       "id": "t3",
       "name": "Team Grün",
       "players": [
-        { "id": "pl5", "name": "Felix Braun", "number": 8 }
+        {
+          "id": "pl5",
+          "name": "Felix Braun",
+          "number": 8
+        }
       ]
     },
     {
       "id": "t4",
       "name": "Team Gelb",
       "players": [
-        { "id": "pl6", "name": "Sara Hoffmann", "number": 5 }
+        {
+          "id": "pl6",
+          "name": "Sara Hoffmann",
+          "number": 5
+        }
       ]
     }
   ],
@@ -49,7 +73,8 @@
       "penalties": [],
       "goals": [],
       "startedAt": null,
-      "endedAt": null
+      "endedAt": null,
+      "durationMinutes": 10
     },
     {
       "id": "m2",
@@ -64,7 +89,13 @@
       "penalties": [],
       "goals": [],
       "startedAt": null,
-      "endedAt": null
+      "endedAt": null,
+      "durationMinutes": 10
     }
-  ]
+  ],
+  "pushSubscriptions": [],
+  "vapidKeys": {
+    "publicKey": "BKvg6IZsGBG0KfQuicsCywo5RZjlMk4s3kSpA6QU0b06D87pYjRlHS6sEuGIVAlxnsLFIc22Lif3vD4hDdYlRVo",
+    "privateKey": "V52PLDHvPmz_osdcyo8XQBdgFWYX4M206N4s_FILUws"
+  }
 }

@@ -27,14 +27,15 @@
   </div>
 
   <main class="container">
+    <div class="sport-view-switch" id="sport-view-switch">
+      <button type="button" class="sport-view-btn active" data-sport="Fußball">⚽ Fußball</button>
+      <button type="button" class="sport-view-btn" data-sport="Volleyball">🏐 Volleyball</button>
+    </div>
+
     <div class="match-list" id="match-list"></div>
 
     <section class="leaderboard-section" id="leaderboard-section">
       <h2 class="leaderboard-title" id="leaderboard-title">🏆 ENDSTAND</h2>
-      <div class="standings-tabs" id="standings-tabs">
-        <button type="button" class="standings-tab" data-sport="Fußball">⚽ Fußball</button>
-        <button type="button" class="standings-tab" data-sport="Volleyball">🏐 Volleyball</button>
-      </div>
       <div id="leaderboard"></div>
     </section>
 
@@ -56,7 +57,7 @@
     let data = { settings: { gameDurationMinutes: 10, standingsSport: 'Fußball' }, teams: [], matches: [] };
     const expandedPenaltyLogs = {};
     let publicTimerInterval = null;
-    let selectedStandingsSport = 'Fußball';
+    let selectedSport = localStorage.getItem('sportfest-view-sport') || 'Fußball';
 
     const SPORT_EMOJIS = {
       'Fußball': '⚽',
@@ -106,9 +107,13 @@
       }
     }
 
+    function getMatchDurationMinutes(match) {
+      return Math.min(120, Math.max(1, Number(match?.durationMinutes) || data.settings?.gameDurationMinutes || 10));
+    }
+
     function getRemainingSeconds(match) {
       if (!match.startedAt || match.status !== 'running') return null;
-      const durationMs = ((data.settings && data.settings.gameDurationMinutes) || 10) * 60 * 1000;
+      const durationMs = getMatchDurationMinutes(match) * 60 * 1000;
       const elapsed = Date.now() - new Date(match.startedAt).getTime();
       return Math.max(0, Math.floor((durationMs - elapsed) / 1000));
     }
@@ -179,7 +184,7 @@
       const penalties = match.penalties || [];
       if (penalties.length === 0) return '';
 
-      const isExpanded = expandedPenaltyLogs[match.id] === true || (!isMobile() && expandedPenaltyLogs[match.id] !== false);
+      const isExpanded = expandedPenaltyLogs[match.id] === true;
       const toggleLabel = isExpanded
         ? `▲ ${penalties.length} Strafen ausblenden`
         : `▼ ${penalties.length} Strafe${penalties.length > 1 ? 'n' : ''} anzeigen`;
@@ -207,7 +212,7 @@
 
       return `
         <div class="penalty-log">
-          ${isMobile() ? `<button class="penalty-toggle" data-match-id="${match.id}">${toggleLabel}</button>` : ''}
+          <button type="button" class="penalty-toggle" data-match-id="${match.id}">${toggleLabel}</button>
           <div class="penalty-log-content ${isExpanded ? '' : 'penalty-log-collapsed'}">
             <div class="penalty-log-header">⚠️ Strafen &amp; Karten</div>
             ${rows}
@@ -230,19 +235,25 @@
       const list = document.getElementById('match-list');
       const liveIndicator = document.getElementById('live-indicator');
 
-      const sorted = [...data.matches].sort((a, b) => a.time.localeCompare(b.time));
+      document.querySelectorAll('.sport-view-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.sport === selectedSport);
+      });
+
+      const sorted = [...data.matches]
+        .filter(m => m.sport === selectedSport)
+        .sort((a, b) => a.time.localeCompare(b.time));
       const hasLive = sorted.some(m => m.status === 'running');
       liveIndicator.style.display = hasLive ? 'inline-flex' : 'none';
 
       if (sorted.length === 0) {
-        list.innerHTML = '<div class="empty-state">Noch keine Spiele geplant.</div>';
+        list.innerHTML = `<div class="empty-state">Noch keine ${escapeHtml(selectedSport)}-Spiele geplant.</div>`;
         return;
       }
 
       list.innerHTML = sorted.map(match => {
-        const emoji = match.emoji || SPORT_EMOJIS[match.sport] || '🏅';
         const pb = penaltyBadges(match);
         const cardClass = 'match-card' + (pb.hasRed ? ' match-card-red-border' : '');
+        const showPoints = (match.goals || []).length > 0 && (match.status === 'running' || match.status === 'finished');
 
         return `
           <div class="${cardClass}" data-match-id="${match.id}">
@@ -251,7 +262,6 @@
                 <span class="match-time">${formatTime(match.time)}</span>
                 ${statusBadge(match.status)}
               </div>
-              <div class="match-sport">${match.sport} ${emoji}</div>
             </div>
             <div class="match-score-block">
               <div class="match-score-layout">
@@ -267,7 +277,7 @@
                   <div class="team-name">${escapeHtml(getTeamName(match.teamB))}${pb.badgesB}</div>
                 </div>
               </div>
-              ${renderPointHistory(match)}
+              ${showPoints ? renderPointHistory(match) : ''}
             </div>
             ${renderMatchTimer(match)}
             ${renderPenaltyLog(match)}
@@ -371,12 +381,10 @@
 
     function renderLeaderboard() {
       const container = document.getElementById('leaderboard');
-      const sport = selectedStandingsSport;
+      const sport = selectedSport;
       const emoji = SPORT_EMOJIS[sport] || '';
 
-      document.querySelectorAll('.standings-tab').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.sport === sport);
-      });
+      document.getElementById('leaderboard-title').textContent = `🏆 ENDSTAND ${emoji} ${sport}`.trim();
 
       const standings = calculateStandings(sport);
 
@@ -532,16 +540,19 @@
       data = newData;
       if (!data.settings) data.settings = { gameDurationMinutes: 10, standingsSport: 'Fußball' };
       if (!data.settings.standingsSport) data.settings.standingsSport = 'Fußball';
-      selectedStandingsSport = data.settings.standingsSport;
+      if (!localStorage.getItem('sportfest-view-sport')) {
+        selectedSport = data.settings.standingsSport;
+      }
       renderAll();
       updateTimestamp();
     }
 
-    document.getElementById('standings-tabs').addEventListener('click', (e) => {
-      const btn = e.target.closest('.standings-tab');
+    document.getElementById('sport-view-switch').addEventListener('click', (e) => {
+      const btn = e.target.closest('.sport-view-btn');
       if (!btn) return;
-      selectedStandingsSport = btn.dataset.sport;
-      renderLeaderboard();
+      selectedSport = btn.dataset.sport;
+      localStorage.setItem('sportfest-view-sport', selectedSport);
+      renderAll();
     });
 
     setCurrentDate();
@@ -662,35 +673,75 @@
       } else if (state === 'dismissed') {
         banner.style.display = 'none';
         updatePushToggleBar(false);
-      } else if (!isMobile()) {
-        banner.style.display = 'flex';
-        updatePushToggleBar(false);
       } else {
         banner.style.display = 'none';
         updatePushToggleBar(false);
       }
     }
 
-    async function registerPushSubscription() {
-      const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    async function ensurePushServiceWorker() {
+      let reg = await navigator.serviceWorker.getRegistration('/');
+      if (reg) {
+        await reg.update();
+      } else {
+        reg = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
+      }
       await navigator.serviceWorker.ready;
+      return reg;
+    }
+
+    async function removeLocalPushSubscription(reg) {
+      if (!reg) return;
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) return;
+      const endpoint = sub.endpoint;
+      await fetch('/api/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint })
+      }).catch(() => {});
+      await sub.unsubscribe().catch(() => {});
+    }
+
+    function validateVapidPublicKey(publicKey) {
+      const trimmed = String(publicKey || '').trim();
+      if (!trimmed) throw new Error('Kein VAPID-Schlüssel vom Server');
+      const bytes = urlBase64ToUint8Array(trimmed);
+      if (bytes.length !== 65) {
+        throw new Error('Ungültiger Push-Schlüssel — bitte Seite neu laden oder Admin kontaktieren');
+      }
+      return trimmed;
+    }
+
+    async function createPushSubscription(reg, publicKey) {
+      await removeLocalPushSubscription(reg);
+      try {
+        return await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+      } catch (err) {
+        await removeLocalPushSubscription(reg);
+        if (err?.name === 'AbortError' || /registration failed/i.test(String(err.message || err))) {
+          throw new Error('Push-Dienst nicht erreichbar. Seite neu laden und erneut versuchen — oder anderen Browser (Chrome/Edge) nutzen.');
+        }
+        throw err;
+      }
+    }
+
+    async function registerPushSubscription() {
+      const reg = await ensurePushServiceWorker();
 
       const keyRes = await fetch('/api/push/vapid-key');
       if (!keyRes.ok) throw new Error('VAPID key konnte nicht geladen werden');
       const { publicKey } = await keyRes.json();
-      if (!publicKey) throw new Error('Kein VAPID public key');
+      const validKey = validateVapidPublicKey(publicKey);
 
-      let sub = await reg.pushManager.getSubscription();
-
-      if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey)
-        });
-      }
-
+      const sub = await createPushSubscription(reg, validKey);
       const subJson = sub.toJSON ? sub.toJSON() : JSON.parse(JSON.stringify(sub));
-      if (!subJson.endpoint) throw new Error('Ungültiges Push-Abo');
+      if (!subJson.endpoint || !subJson.keys?.p256dh || !subJson.keys?.auth) {
+        throw new Error('Ungültiges Push-Abo');
+      }
 
       const res = await fetch('/api/push/subscribe', {
         method: 'POST',
@@ -699,19 +750,8 @@
       });
 
       if (!res.ok) {
-        if (sub) await sub.unsubscribe().catch(() => {});
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey)
-        });
-        const retryJson = sub.toJSON();
-        const retryRes = await fetch('/api/push/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(retryJson)
-        });
-        if (!retryRes.ok) throw new Error('Server hat Abo abgelehnt');
-        return await retryRes.json();
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Server hat Abo abgelehnt');
       }
 
       return await res.json();

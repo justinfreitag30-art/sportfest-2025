@@ -38,7 +38,8 @@ function normalizeData(obj) {
     penalties: m.penalties || [],
     goals: m.goals || [],
     startedAt: m.startedAt || null,
-    endedAt: m.endedAt || null
+    endedAt: m.endedAt || null,
+    durationMinutes: Math.min(120, Math.max(1, Number(m.durationMinutes) || obj.settings.gameDurationMinutes || 10))
   }));
   return obj;
 }
@@ -585,7 +586,11 @@ app.get('/api/data', (req, res) => {
 });
 
 app.get('/api/push/vapid-key', (req, res) => {
-  res.json({ publicKey: vapidKeys.publicKey });
+  const publicKey = String(vapidKeys.publicKey || '').trim();
+  if (!publicKey) {
+    return res.status(500).json({ error: 'VAPID key not configured' });
+  }
+  res.json({ publicKey });
 });
 
 app.get('/api/push/status', requireAuth, requireAdmin, (req, res) => {

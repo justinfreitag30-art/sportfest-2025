@@ -93,6 +93,37 @@ body {
   gap: 1rem;
 }
 
+.sport-view-switch {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.sport-view-btn {
+  flex: 1;
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--blue);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.sport-view-btn.active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--white);
+}
+
+.sport-view-btn:hover:not(.active) {
+  background: #EEF2FF;
+  border-color: var(--blue);
+}
+
 .match-card {
   background: var(--light-gray);
   border-radius: 12px;
@@ -486,6 +517,26 @@ body {
 .user-create-form input {
   min-width: 140px;
   flex: 1;
+}
+
+.match-duration-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--dark);
+  white-space: nowrap;
+}
+
+.match-duration-input {
+  width: 4.5rem;
+  min-width: 4.5rem;
+  flex: 0 0 auto;
+  text-align: center;
+}
+
+.match-duration-suffix {
+  font-size: 0.85rem;
+  color: #666;
+  white-space: nowrap;
 }
 
 /* ── Activity Log ── */

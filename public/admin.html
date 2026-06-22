@@ -51,6 +51,9 @@
             <option value="Fußball">Fußball ⚽</option>
             <option value="Volleyball">Volleyball 🏐</option>
           </select>
+          <label class="match-duration-label" for="match-duration">Dauer</label>
+          <input type="number" id="match-duration" min="1" max="120" value="10" class="match-duration-input" title="Spielzeit in Minuten">
+          <span class="match-duration-suffix">Min.</span>
           <select id="match-teamA"></select>
           <select id="match-teamB"></select>
           <button class="btn btn-primary" id="btn-add-match">Spiel hinzufügen</button>
@@ -61,6 +64,7 @@
               <tr>
                 <th>Zeit</th>
                 <th>Sport</th>
+                <th>Dauer</th>
                 <th>Team A</th>
                 <th>Team B</th>
                 <th>Status</th>
@@ -121,7 +125,7 @@
           <button class="btn btn-red" id="btn-save-settings">💾 Speichern</button>
         </div>
         <p class="section-hint" style="margin-top:0.5rem; margin-bottom:0;">
-          Zuschauer können auf der Hauptseite zwischen Fußball und Volleyball umschalten. Hier legst du fest, welcher Tab zuerst angezeigt wird.
+          „Spielzeit pro Partie" ist der Standard für neue Spiele. Beim Anlegen kannst du die Dauer pro Spiel ändern.
         </p>
       </section>
       <section class="section">
@@ -1100,15 +1104,20 @@
       ensureSettings();
       updateIdCounters();
       document.getElementById('game-duration').value = data.settings.gameDurationMinutes;
+      document.getElementById('match-duration').value = data.settings.gameDurationMinutes;
       document.getElementById('standings-sport').value = data.settings.standingsSport || 'Fußball';
       renderAll();
       if (isAdmin() && activeTab === 'log') loadActivityLog();
       if (isAdmin() && activeTab === 'report') renderMatchReport();
     }
 
+    function getMatchDurationMinutes(match) {
+      return Math.min(120, Math.max(1, Number(match?.durationMinutes) || data.settings?.gameDurationMinutes || 10));
+    }
+
     function getRemainingSeconds(match) {
       if (!match.startedAt || match.status !== 'running') return null;
-      const durationMs = (data.settings.gameDurationMinutes || 10) * 60 * 1000;
+      const durationMs = getMatchDurationMinutes(match) * 60 * 1000;
       const elapsed = Date.now() - new Date(match.startedAt).getTime();
       return Math.max(0, Math.floor((durationMs - elapsed) / 1000));
     }
@@ -1168,11 +1177,17 @@
     document.getElementById('btn-duration-minus').addEventListener('click', () => {
       const input = document.getElementById('game-duration');
       input.value = Math.max(1, parseInt(input.value, 10) - 1);
+      document.getElementById('match-duration').value = input.value;
     });
 
     document.getElementById('btn-duration-plus').addEventListener('click', () => {
       const input = document.getElementById('game-duration');
       input.value = Math.min(120, parseInt(input.value, 10) + 1);
+      document.getElementById('match-duration').value = input.value;
+    });
+
+    document.getElementById('game-duration').addEventListener('change', () => {
+      document.getElementById('match-duration').value = document.getElementById('game-duration').value;
     });
 
     document.getElementById('btn-save-settings').addEventListener('click', () => {
@@ -1464,7 +1479,7 @@
     function renderMatchTable() {
       const tbody = document.getElementById('match-table-body');
       if (data.matches.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Keine Spiele geplant.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Keine Spiele geplant.</td></tr>';
         return;
       }
 
@@ -1472,6 +1487,7 @@
         <tr>
           <td>${match.time}</td>
           <td>${match.sport} ${match.emoji || SPORT_EMOJIS[match.sport] || ''}</td>
+          <td>${getMatchDurationMinutes(match)} Min.</td>
           <td>${escapeHtml(getTeamName(match.teamA))}</td>
           <td>${escapeHtml(getTeamName(match.teamB))}</td>
           <td>${statusLabel(match.status)}</td>
@@ -1530,6 +1546,8 @@
     document.getElementById('btn-add-match').addEventListener('click', () => {
       const time = document.getElementById('match-time').value;
       const sport = document.getElementById('match-sport').value;
+      const durationMinutes = Math.min(120, Math.max(1,
+        parseInt(document.getElementById('match-duration').value, 10) || data.settings.gameDurationMinutes || 10));
       const teamA = document.getElementById('match-teamA').value;
       const teamB = document.getElementById('match-teamB').value;
 
@@ -1544,6 +1562,7 @@
         time,
         sport,
         emoji: SPORT_EMOJIS[sport] || '🏅',
+        durationMinutes,
         teamA,
         teamB,
         scoreA: 0,
