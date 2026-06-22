@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anmelden — Sportfest 2025 Admin</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="login-header">
+      <h1>⚙️ Admin</h1>
+      <p>Sportfest 2025</p>
+    </div>
+
+    <form id="login-form" class="login-form">
+      <label for="username">Benutzername</label>
+      <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+
+      <label for="password">Passwort</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+      <p class="login-error" id="login-error" style="display:none;"></p>
+
+      <button type="submit" class="btn btn-primary login-submit" id="btn-login">Anmelden</button>
+    </form>
+
+    <p class="login-footer">
+      <a href="/">← Zur Zuschauer-Ansicht</a>
+    </p>
+  </main>
+
+  <script>
+    const form = document.getElementById('login-form');
+    const errorEl = document.getElementById('login-error');
+    const btn = document.getElementById('btn-login');
+
+    fetch('/api/auth/me', { credentials: 'same-origin' })
+      .then(res => {
+        if (res.ok) window.location.href = '/admin';
+      })
+      .catch(() => {});
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorEl.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Wird angemeldet…';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value
+          })
+        });
+        const result = await res.json();
+        if (!res.ok) {
+          throw new Error(result.error || 'Anmeldung fehlgeschlagen');
+        }
+        window.location.href = '/admin';
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Anmelden';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -10,6 +10,8 @@
   <header class="admin-header">
     <h1>⚙️ Admin — Sportfest 2025</h1>
     <div class="admin-header-links">
+      <span class="admin-user-badge" id="admin-user-label">…</span>
+      <button type="button" class="admin-logout-btn" id="btn-logout">Abmelden</button>
       <a href="/">← Zuschauer-Ansicht</a>
       <a href="/preview" target="_blank">📱 Mobile Vorschau</a>
     </div>
@@ -23,6 +25,7 @@
       <button type="button" class="admin-tab" data-tab="teams">👥 Teams</button>
       <button type="button" class="admin-tab" data-tab="players">🏃 Spieler</button>
       <button type="button" class="admin-tab" data-tab="settings">⚙️ Mehr</button>
+      <button type="button" class="admin-tab" data-tab="users">👤 Benutzer</button>
     </nav>
 
     <!-- TAB: Live Scoring -->
@@ -129,6 +132,18 @@
         <div style="margin-top:0.75rem;">
           <button class="btn btn-primary" id="btn-test-push">🔔 Test-Push senden</button>
         </div>
+        <div class="custom-push-form">
+          <h3>📢 Eigene Nachricht</h3>
+          <p class="section-hint">Sende eine benutzerdefinierte Push-Nachricht an alle Zuschauer mit aktivierten Benachrichtigungen.</p>
+          <label class="custom-push-label" for="custom-push-title">Titel</label>
+          <input type="text" id="custom-push-title" class="custom-push-input" placeholder="Sportfest 2025" maxlength="80">
+          <label class="custom-push-label" for="custom-push-body">Nachricht</label>
+          <textarea id="custom-push-body" class="custom-push-textarea" rows="3" maxlength="280" placeholder="z.B. Endspiel um 14:00 — alle zum Hauptplatz!"></textarea>
+          <div class="custom-push-actions">
+            <span class="custom-push-counter" id="custom-push-counter">0 / 280</span>
+            <button class="btn btn-red" id="btn-send-custom-push">📢 An alle senden</button>
+          </div>
+        </div>
         <p class="section-hint" style="margin-top:0.5rem; margin-bottom:0;">
           Tipp: Zuschauer müssen Push auf der <strong>Hauptseite</strong> aktivieren (nicht in der Vorschau).
         </p>
@@ -138,6 +153,23 @@
         <div class="quick-actions">
           <button class="btn btn-gray" id="btn-reset-scores">🔄 Alle Ergebnisse zurücksetzen</button>
           <button class="btn btn-gray" id="btn-reset-status">⏹ Alle Spiele auf Ausstehend</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- TAB: Benutzer -->
+    <div class="admin-tab-panel" id="tab-users">
+      <section class="section">
+        <h2>👤 Benutzerkonten</h2>
+        <p class="section-hint">Lege Konten für weitere Admins an. Jeder angemeldete Benutzer kann das Admin-Panel nutzen.</p>
+        <div id="users-list" class="users-list"></div>
+        <div class="user-create-form">
+          <h3>Neues Konto anlegen</h3>
+          <div class="form-row">
+            <input type="text" id="new-username" placeholder="Benutzername" autocomplete="username">
+            <input type="password" id="new-password" placeholder="Passwort (min. 4 Zeichen)" autocomplete="new-password">
+            <button class="btn btn-primary" id="btn-create-user">Konto erstellen</button>
+          </div>
         </div>
       </section>
     </div>
@@ -159,6 +191,7 @@
   <script src="/socket.io/socket.io.js"></script>
   <script>
     let data = { settings: { gameDurationMinutes: 10 }, teams: [], matches: [] };
+    let currentUser = null;
     let nextTeamId = 1;
     let nextMatchId = 1;
     let nextPlayerId = 1;
@@ -245,9 +278,101 @@
       return fetch('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify(data)
+      }).then(res => {
+        if (res.status === 401) {
+          window.location.href = '/admin/login';
+          throw new Error('Nicht angemeldet');
+        }
+        return res;
       });
     }
+
+    async function checkAuth() {
+      const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      if (!res.ok) {
+        window.location.href = '/admin/login';
+        return false;
+      }
+      currentUser = await res.json();
+      document.getElementById('admin-user-label').textContent = `👤 ${currentUser.username}`;
+      return true;
+    }
+
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+      window.location.href = '/admin/login';
+    });
+
+    async function loadUsers() {
+      try {
+        const res = await fetch('/api/auth/users', { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('load failed');
+        const { users } = await res.json();
+        renderUsers(users);
+      } catch (e) {
+        document.getElementById('users-list').innerHTML = '<p class="section-hint">Benutzer konnten nicht geladen werden.</p>';
+      }
+    }
+
+    function renderUsers(users) {
+      const el = document.getElementById('users-list');
+      if (!users.length) {
+        el.innerHTML = '<p class="section-hint">Noch keine Benutzer.</p>';
+        return;
+      }
+      el.innerHTML = users.map(u => `
+        <div class="user-row">
+          <span class="user-row-name">${escapeHtml(u.username)}${u.id === currentUser?.id ? ' <em>(du)</em>' : ''}</span>
+          ${u.id !== currentUser?.id
+            ? `<button class="btn btn-red btn-small" data-delete-user="${escapeHtml(u.id)}">Löschen</button>`
+            : '<span class="user-row-self">Aktives Konto</span>'}
+        </div>
+      `).join('');
+
+      el.querySelectorAll('[data-delete-user]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Benutzer wirklich löschen?')) return;
+          const res = await fetch(`/api/auth/users/${btn.dataset.deleteUser}`, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+          });
+          const result = await res.json();
+          if (!res.ok) {
+            showToast(result.error || 'Löschen fehlgeschlagen', true);
+            return;
+          }
+          showToast('Benutzer gelöscht');
+          loadUsers();
+        });
+      });
+    }
+
+    document.getElementById('btn-create-user').addEventListener('click', async () => {
+      const username = document.getElementById('new-username').value.trim();
+      const password = document.getElementById('new-password').value;
+      if (!username || !password) {
+        showToast('Benutzername und Passwort eingeben', true);
+        return;
+      }
+      try {
+        const res = await fetch('/api/auth/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ username, password })
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error);
+        document.getElementById('new-username').value = '';
+        document.getElementById('new-password').value = '';
+        showToast(`Konto „${result.user.username}" erstellt`);
+        loadUsers();
+      } catch (e) {
+        showToast(e.message || 'Konto konnte nicht erstellt werden', true);
+      }
+    });
 
     function onDataUpdate(newData) {
       data = newData;
@@ -352,7 +477,7 @@
 
     async function updatePushStatus() {
       try {
-        const res = await fetch('/api/push/status');
+        const res = await fetch('/api/push/status', { credentials: 'same-origin' });
         const { subscribers } = await res.json();
         const text = `🔔 ${subscribers} Zuschauer mit Push-Benachrichtigungen`;
         const bar = document.getElementById('push-status');
@@ -362,21 +487,31 @@
       } catch (e) { /* ignore */ }
     }
 
+    async function sendPushNotification(payload) {
+      const res = await fetch('/api/push/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Push fehlgeschlagen');
+      return result;
+    }
+
+    function showPushResult(result, emptyHint) {
+      if (result.sent > 0) {
+        showToast(`📢 Push an ${result.sent} Gerät${result.sent > 1 ? 'e' : ''} gesendet`);
+      } else {
+        showToast(emptyHint || 'Keine Abonnenten — Zuschauer müssen Push auf der Hauptseite aktivieren', true);
+      }
+      updatePushStatus();
+    }
+
     async function sendMatchPush(matchId) {
       try {
-        const res = await fetch('/api/push/notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ matchId })
-        });
-        const result = await res.json();
-        if (!res.ok) throw new Error(result.error);
-        if (result.sent > 0) {
-          showToast(`📢 Push an ${result.sent} Gerät${result.sent > 1 ? 'e' : ''} gesendet`);
-        } else {
-          showToast('Keine Abonnenten — Zuschauer müssen Push auf der Hauptseite aktivieren', true);
-        }
-        updatePushStatus();
+        const result = await sendPushNotification({ matchId });
+        showPushResult(result);
       } catch (e) {
         showToast('Push konnte nicht gesendet werden', true);
       }
@@ -390,21 +525,43 @@
 
     document.getElementById('btn-test-push').addEventListener('click', async () => {
       try {
-        const res = await fetch('/api/push/notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ test: true })
-        });
-        const result = await res.json();
-        if (!res.ok) throw new Error(result.error);
-        if (result.sent > 0) {
-          showToast(`✅ Test-Push an ${result.sent} Gerät${result.sent > 1 ? 'e' : ''} gesendet`);
-        } else {
-          showToast('Keine Abonnenten! Zuschauer muss auf Hauptseite Push aktivieren.', true);
-        }
-        updatePushStatus();
+        const result = await sendPushNotification({ test: true });
+        showPushResult(result, 'Keine Abonnenten! Zuschauer muss auf Hauptseite Push aktivieren.');
       } catch (e) {
         showToast('Test-Push fehlgeschlagen', true);
+      }
+    });
+
+    const customPushBody = document.getElementById('custom-push-body');
+    const customPushCounter = document.getElementById('custom-push-counter');
+    customPushBody.addEventListener('input', () => {
+      customPushCounter.textContent = `${customPushBody.value.length} / 280`;
+    });
+
+    document.getElementById('btn-send-custom-push').addEventListener('click', async () => {
+      const title = document.getElementById('custom-push-title').value.trim();
+      const body = customPushBody.value.trim();
+      if (!body) {
+        showToast('Bitte eine Nachricht eingeben', true);
+        customPushBody.focus();
+        return;
+      }
+      if (!confirm(`Push an alle Abonnenten senden?\n\n„${body.slice(0, 80)}${body.length > 80 ? '…' : ''}"`)) return;
+
+      const btn = document.getElementById('btn-send-custom-push');
+      btn.disabled = true;
+      try {
+        const result = await sendPushNotification({
+          title: title || 'Sportfest 2025',
+          body
+        });
+        showPushResult(result);
+        customPushBody.value = '';
+        customPushCounter.textContent = '0 / 280';
+      } catch (e) {
+        showToast(e.message || 'Nachricht konnte nicht gesendet werden', true);
+      } finally {
+        btn.disabled = false;
       }
     });
 
@@ -416,6 +573,7 @@
       document.querySelectorAll('.admin-tab-panel').forEach(panel => {
         panel.classList.toggle('active', panel.id === 'tab-' + tabId);
       });
+      if (tabId === 'users') loadUsers();
     }
 
     document.getElementById('admin-tabs').addEventListener('click', (e) => {
@@ -1134,13 +1292,16 @@
       updatePushStatus();
     }
 
-    fetch('/api/data')
-      .then(res => res.json())
-      .then(onDataUpdate)
-      .catch(err => console.error('Failed to load data:', err));
+    checkAuth().then(ok => {
+      if (!ok) return;
+      fetch('/api/data')
+        .then(res => res.json())
+        .then(onDataUpdate)
+        .catch(err => console.error('Failed to load data:', err));
 
-    const socket = io();
-    socket.on('update', onDataUpdate);
+      const socket = io();
+      socket.on('update', onDataUpdate);
+    });
   </script>
 </body>
 </html>

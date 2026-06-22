@@ -3,6 +3,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const session = require('express-session');
 const webpush = require('web-push');
 
 const app = express();
@@ -13,9 +16,13 @@ const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
 const VAPID_FILE = path.join(__dirname, 'vapid.json');
 const SUBS_FILE = path.join(__dirname, 'subscriptions.json');
+const USERS_FILE = path.join(__dirname, 'users.json');
+const SESSION_SECRET_FILE = path.join(__dirname, 'session-secret.json');
 
 let data = { settings: { gameDurationMinutes: 10 }, teams: [], matches: [] };
 let subscriptions = [];
+let users = [];
+let nextUserId = 1;
 
 function normalizeData(obj) {
   if (!obj.settings) obj.settings = { gameDurationMinutes: 10 };
@@ -83,8 +90,70 @@ const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:sportfest@example.com'
 
 webpush.setVapidDetails(vapidSubject, vapidKeys.publicKey, vapidKeys.privateKey);
 
+function loadSessionSecret() {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SESSION_SECRET_FILE, 'utf8'));
+    if (parsed.secret) return parsed.secret;
+  } catch {
+    // generate below
+  }
+  const secret = crypto.randomBytes(48).toString('hex');
+  fs.writeFileSync(SESSION_SECRET_FILE, JSON.stringify({ secret }, null, 2), 'utf8');
+  console.log('Session secret generated and saved to session-secret.json');
+  return secret;
+}
+
+function saveUsers() {
+  fs.writeFileSync(USERS_FILE, JSON.stringify({ users, nextUserId }, null, 2), 'utf8');
+}
+
+function loadUsers() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+    users = parsed.users || [];
+    nextUserId = parsed.nextUserId || 1;
+    users.forEach(u => {
+      const num = parseInt(String(u.id).replace('u', ''), 10);
+      if (!isNaN(num) && num >= nextUserId) nextUserId = num + 1;
+    });
+    return;
+  } catch {
+    // create default admin
+  }
+
+  const defaultUsername = process.env.ADMIN_USERNAME || 'admin';
+  const defaultPassword = process.env.ADMIN_PASSWORD || 'sportfest';
+  const passwordHash = bcrypt.hashSync(defaultPassword, 10);
+  users = [{ id: 'u1', username: defaultUsername, passwordHash }];
+  nextUserId = 2;
+  saveUsers();
+  console.log('Default admin account created:');
+  console.log(`  Username: ${defaultUsername}`);
+  console.log(`  Password: ${defaultPassword}`);
+  console.log('  Please change the password after first login!');
+}
+
+function requireAuth(req, res, next) {
+  if (req.session && req.session.userId) return next();
+  if (req.path.startsWith('/api/')) {
+    return res.status(401).json({ error: 'Nicht angemeldet' });
+  }
+  return res.redirect('/admin/login');
+}
+
+function sanitizeUser(user) {
+  return { id: user.id, username: user.username };
+}
+
 loadData();
 loadSubscriptions();
+loadUsers();
+
+const sessionSecret = loadSessionSecret();
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
+
+app.set('trust proxy', 1);
 
 function getTeamName(id) {
   const team = data.teams.find(t => t.id === id);
@@ -132,14 +201,111 @@ async function sendPushToAll(payload) {
 }
 
 app.use(express.json({ limit: '1mb' }));
+app.use(session({
+  secret: sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000
+  }
+}));
+
+app.get('/admin/login', (req, res) => {
+  if (req.session && req.session.userId) {
+    return res.redirect('/admin');
+  }
+  res.sendFile(path.join(__dirname, 'public', 'admin-login.html'));
+});
+
+app.get('/admin', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.get('/admin.html', (req, res) => {
+  res.redirect('/admin/login');
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Benutzername und Passwort erforderlich' });
+  }
+
+  const user = users.find(u => u.username.toLowerCase() === String(username).trim().toLowerCase());
+  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+    return res.status(401).json({ error: 'Benutzername oder Passwort falsch' });
+  }
+
+  req.session.userId = user.id;
+  req.session.username = user.username;
+  res.json({ ok: true, user: sanitizeUser(user) });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ ok: true });
+  });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ error: 'Nicht angemeldet' });
+  }
+  const user = users.find(u => u.id === req.session.userId);
+  if (!user) {
+    return res.status(401).json({ error: 'Benutzer nicht gefunden' });
+  }
+  res.json(sanitizeUser(user));
+});
+
+app.get('/api/auth/users', requireAuth, (req, res) => {
+  res.json({ users: users.map(sanitizeUser) });
+});
+
+app.post('/api/auth/users', requireAuth, (req, res) => {
+  const { username, password } = req.body || {};
+  const trimmed = String(username || '').trim();
+  if (!trimmed || trimmed.length < 2) {
+    return res.status(400).json({ error: 'Benutzername muss mindestens 2 Zeichen haben' });
+  }
+  if (!password || String(password).length < 4) {
+    return res.status(400).json({ error: 'Passwort muss mindestens 4 Zeichen haben' });
+  }
+  if (users.some(u => u.username.toLowerCase() === trimmed.toLowerCase())) {
+    return res.status(409).json({ error: 'Benutzername bereits vergeben' });
+  }
+
+  const user = {
+    id: `u${nextUserId++}`,
+    username: trimmed,
+    passwordHash: bcrypt.hashSync(password, 10)
+  };
+  users.push(user);
+  saveUsers();
+  res.json({ ok: true, user: sanitizeUser(user) });
+});
+
+app.delete('/api/auth/users/:id', requireAuth, (req, res) => {
+  const { id } = req.params;
+  if (id === req.session.userId) {
+    return res.status(400).json({ error: 'Du kannst dein eigenes Konto nicht löschen' });
+  }
+  const before = users.length;
+  users = users.filter(u => u.id !== id);
+  if (users.length === before) {
+    return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+  }
+  saveUsers();
+  res.json({ ok: true });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
 app.get('/preview', (req, res) => {
@@ -154,7 +320,7 @@ app.get('/api/push/vapid-key', (req, res) => {
   res.json({ publicKey: vapidKeys.publicKey });
 });
 
-app.get('/api/push/status', (req, res) => {
+app.get('/api/push/status', requireAuth, (req, res) => {
   res.json({ subscribers: subscriptions.length });
 });
 
@@ -180,8 +346,8 @@ app.post('/api/push/unsubscribe', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/push/notify', async (req, res) => {
-  const { matchId, test } = req.body;
+app.post('/api/push/notify', requireAuth, async (req, res) => {
+  const { matchId, test, title, body, message } = req.body;
 
   if (test) {
     try {
@@ -197,23 +363,40 @@ app.post('/api/push/notify', async (req, res) => {
     }
   }
 
-  if (!matchId) {
-    return res.status(400).json({ error: 'matchId required' });
+  if (matchId) {
+    const match = data.matches.find(m => m.id === matchId);
+    if (!match) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+    try {
+      const result = await sendPushToAll(buildMatchPushPayload(match));
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error('Push error:', err);
+      return res.status(500).json({ error: 'Push failed' });
+    }
   }
-  const match = data.matches.find(m => m.id === matchId);
-  if (!match) {
-    return res.status(404).json({ error: 'Match not found' });
+
+  const customBody = String(body || message || '').trim();
+  if (customBody) {
+    const customTitle = String(title || 'Sportfest 2025').trim().slice(0, 80) || 'Sportfest 2025';
+    try {
+      const result = await sendPushToAll({
+        title: customTitle,
+        body: customBody.slice(0, 280),
+        url: '/'
+      });
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error('Custom push error:', err);
+      return res.status(500).json({ error: 'Push failed' });
+    }
   }
-  try {
-    const result = await sendPushToAll(buildMatchPushPayload(match));
-    res.json({ ok: true, ...result });
-  } catch (err) {
-    console.error('Push error:', err);
-    res.status(500).json({ error: 'Push failed' });
-  }
+
+  return res.status(400).json({ error: 'matchId, test oder Nachricht erforderlich' });
 });
 
-app.post('/api/save', (req, res) => {
+app.post('/api/save', requireAuth, (req, res) => {
   if (!req.body || !Array.isArray(req.body.teams) || !Array.isArray(req.body.matches)) {
     return res.status(400).json({ error: 'Invalid data format' });
   }

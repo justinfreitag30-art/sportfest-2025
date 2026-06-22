@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Sportfest 2025</title>
   <link rel="stylesheet" href="/style.css">
 </head>
@@ -21,18 +21,6 @@
     <button class="btn btn-red btn-small" id="btn-enable-push">Aktivieren</button>
     <button class="push-dismiss" id="btn-dismiss-push" aria-label="Schließen">×</button>
   </div>
-  <div class="push-success" id="push-success" style="display:none;">✅ Push-Benachrichtigungen aktiv</div>
-
-  <!-- Mobile Push-Aufforderung -->
-  <div class="push-prompt-overlay" id="push-prompt" style="display:none;">
-    <div class="push-prompt-box">
-      <div class="push-prompt-icon">🔔</div>
-      <h3>Spiel-Updates erhalten?</h3>
-      <p>Bekomme eine Benachrichtigung auf dein Handy, sobald ein Spiel startet.</p>
-      <button class="btn btn-red push-prompt-btn" id="btn-enable-push-mobile">Benachrichtigungen aktivieren</button>
-      <button class="push-prompt-later" id="btn-push-later">Später</button>
-    </div>
-  </div>
 
   <main class="container">
     <div class="match-list" id="match-list"></div>
@@ -47,8 +35,17 @@
     </section>
 
     <div class="footer" id="last-updated">Zuletzt aktualisiert: —</div>
-    <button class="push-footer-btn" id="btn-push-footer" style="display:none;">🔔 Benachrichtigungen aktivieren</button>
   </main>
+
+  <div class="push-toggle-bar" id="push-toggle-bar" style="display:none;">
+    <label class="push-toggle-label" for="push-toggle-checkbox">
+      <input type="checkbox" id="push-toggle-checkbox" aria-describedby="push-toggle-hint">
+      <span class="push-toggle-text">
+        <strong id="push-toggle-title">🔔 Benachrichtigungen</strong>
+        <small id="push-toggle-hint">Bei Spielstart auf Handy oder Tablet benachrichtigen</small>
+      </span>
+    </label>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
@@ -556,31 +553,79 @@
       return arr;
     }
 
+    function isPushSupported() {
+      return 'Notification' in window
+        && 'serviceWorker' in navigator
+        && 'PushManager' in window
+        && window.self === window.top;
+    }
+
+    function updatePushToggleBar(active, hint) {
+      const bar = document.getElementById('push-toggle-bar');
+      const checkbox = document.getElementById('push-toggle-checkbox');
+      const hintEl = document.getElementById('push-toggle-hint');
+      const titleEl = document.getElementById('push-toggle-title');
+
+      bar.style.display = 'block';
+      document.body.classList.add('has-push-bar');
+      checkbox.checked = !!active;
+      bar.classList.toggle('is-active', !!active);
+
+      if (active) {
+        titleEl.textContent = '🔔 Benachrichtigungen aktiv';
+        hintEl.textContent = 'Du wirst bei Spielstart benachrichtigt';
+      } else if (Notification.permission === 'denied') {
+        titleEl.textContent = '🔔 Benachrichtigungen';
+        hintEl.textContent = 'In den Browser-Einstellungen für diese Seite erlauben';
+      } else {
+        titleEl.textContent = '🔔 Benachrichtigungen';
+        hintEl.textContent = hint || 'Bei Spielstart auf Handy oder Tablet benachrichtigen';
+      }
+    }
+
+    async function isPushSubscribed() {
+      if (!isPushSupported() || Notification.permission !== 'granted') return false;
+      try {
+        const reg = await navigator.serviceWorker.getRegistration('/');
+        if (!reg) return false;
+        const sub = await reg.pushManager.getSubscription();
+        return !!sub;
+      } catch {
+        return false;
+      }
+    }
+
+    async function unsubscribeFromPush() {
+      const reg = await navigator.serviceWorker.getRegistration('/');
+      if (!reg) return;
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) return;
+      const endpoint = sub.endpoint;
+      await sub.unsubscribe();
+      await fetch('/api/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint })
+      }).catch(() => {});
+      localStorage.removeItem('sportfest-push');
+    }
+
     function showPushUI(state) {
       const banner = document.getElementById('push-banner');
-      const success = document.getElementById('push-success');
-      const footerBtn = document.getElementById('btn-push-footer');
-      const prompt = document.getElementById('push-prompt');
+      if (!isPushSupported()) return;
+
       if (state === 'subscribed') {
         banner.style.display = 'none';
-        prompt.style.display = 'none';
-        success.style.display = 'block';
-        footerBtn.style.display = 'none';
+        updatePushToggleBar(true);
       } else if (state === 'dismissed') {
         banner.style.display = 'none';
-        prompt.style.display = 'none';
-        success.style.display = 'none';
-        footerBtn.style.display = 'inline-block';
-      } else if (isMobile()) {
-        banner.style.display = 'none';
-        prompt.style.display = 'flex';
-        success.style.display = 'none';
-        footerBtn.style.display = 'none';
-      } else {
+        updatePushToggleBar(false);
+      } else if (!isMobile()) {
         banner.style.display = 'flex';
-        prompt.style.display = 'none';
-        success.style.display = 'none';
-        footerBtn.style.display = 'none';
+        updatePushToggleBar(false);
+      } else {
+        banner.style.display = 'none';
+        updatePushToggleBar(false);
       }
     }
 
@@ -631,20 +676,18 @@
     }
 
     async function subscribeToPush() {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        alert('Push-Benachrichtigungen werden von diesem Browser nicht unterstützt.\n\nTipp: Chrome oder Edge auf dem Handy verwenden.');
-        return false;
-      }
-
-      if (window.self !== window.top) {
-        alert('Push funktioniert nicht in der Vorschau.\n\nBitte die Hauptseite direkt öffnen: ' + window.location.origin);
+      if (!isPushSupported()) {
+        alert('Push-Benachrichtigungen werden von diesem Browser nicht unterstützt.\n\nTipp: Safari (iOS 16.4+) oder Chrome auf dem Handy verwenden.');
         return false;
       }
 
       try {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-          alert('Benachrichtigungen wurden abgelehnt.\n\nBitte in den Browser-Einstellungen für diese Seite erlauben.');
+          updatePushToggleBar(false);
+          if (permission === 'denied') {
+            alert('Benachrichtigungen wurden abgelehnt.\n\nBitte in den Einstellungen deines Browsers für diese Seite erlauben.');
+          }
           return false;
         }
 
@@ -655,16 +698,27 @@
         return true;
       } catch (err) {
         console.error('Push Fehler:', err);
+        updatePushToggleBar(false);
         alert('Push konnte nicht aktiviert werden:\n' + (err.message || err));
         return false;
       }
     }
 
     async function initPushBanner() {
-      if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
-      if (window.self !== window.top) return;
+      if (!isPushSupported()) return;
 
-      const status = localStorage.getItem('sportfest-push');
+      const subscribed = await isPushSubscribed();
+
+      if (subscribed) {
+        try {
+          await registerPushSubscription();
+          localStorage.setItem('sportfest-push', 'subscribed');
+        } catch (err) {
+          console.warn('Push sync fehlgeschlagen:', err);
+        }
+        showPushUI('subscribed');
+        return;
+      }
 
       if (Notification.permission === 'granted') {
         try {
@@ -674,14 +728,10 @@
           return;
         } catch (err) {
           console.warn('Push sync fehlgeschlagen:', err);
-          localStorage.removeItem('sportfest-push');
         }
       }
 
-      if (status === 'subscribed') {
-        localStorage.removeItem('sportfest-push');
-      }
-
+      const status = localStorage.getItem('sportfest-push');
       if (status === 'dismissed') {
         showPushUI('dismissed');
       } else {
@@ -689,14 +739,26 @@
       }
     }
 
-    document.getElementById('btn-enable-push').addEventListener('click', subscribeToPush);
-    document.getElementById('btn-enable-push-mobile').addEventListener('click', subscribeToPush);
-    document.getElementById('btn-push-footer').addEventListener('click', subscribeToPush);
-    document.getElementById('btn-dismiss-push').addEventListener('click', () => {
-      localStorage.setItem('sportfest-push', 'dismissed');
-      showPushUI('dismissed');
+    document.getElementById('push-toggle-checkbox').addEventListener('change', async (e) => {
+      const checkbox = e.target;
+      if (checkbox.checked) {
+        checkbox.disabled = true;
+        const ok = await subscribeToPush();
+        checkbox.disabled = false;
+        if (!ok) checkbox.checked = false;
+      } else {
+        try {
+          await unsubscribeFromPush();
+          showPushUI('dismissed');
+        } catch (err) {
+          console.error('Push deaktivieren fehlgeschlagen:', err);
+          checkbox.checked = true;
+        }
+      }
     });
-    document.getElementById('btn-push-later').addEventListener('click', () => {
+
+    document.getElementById('btn-enable-push').addEventListener('click', subscribeToPush);
+    document.getElementById('btn-dismiss-push').addEventListener('click', () => {
       localStorage.setItem('sportfest-push', 'dismissed');
       showPushUI('dismissed');
     });
