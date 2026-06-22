@@ -23,11 +23,26 @@
   </div>
   <div class="push-success" id="push-success" style="display:none;">✅ Push-Benachrichtigungen aktiv</div>
 
+  <!-- Mobile Push-Aufforderung -->
+  <div class="push-prompt-overlay" id="push-prompt" style="display:none;">
+    <div class="push-prompt-box">
+      <div class="push-prompt-icon">🔔</div>
+      <h3>Spiel-Updates erhalten?</h3>
+      <p>Bekomme eine Benachrichtigung auf dein Handy, sobald ein Spiel startet.</p>
+      <button class="btn btn-red push-prompt-btn" id="btn-enable-push-mobile">Benachrichtigungen aktivieren</button>
+      <button class="push-prompt-later" id="btn-push-later">Später</button>
+    </div>
+  </div>
+
   <main class="container">
     <div class="match-list" id="match-list"></div>
 
     <section class="leaderboard-section" id="leaderboard-section">
-      <h2 class="leaderboard-title" id="leaderboard-title">🏆 ENDSTAND — SPORTFEST 2025</h2>
+      <h2 class="leaderboard-title" id="leaderboard-title">🏆 ENDSTAND</h2>
+      <div class="standings-tabs" id="standings-tabs">
+        <button type="button" class="standings-tab" data-sport="Fußball">⚽ Fußball</button>
+        <button type="button" class="standings-tab" data-sport="Volleyball">🏐 Volleyball</button>
+      </div>
       <div id="leaderboard"></div>
     </section>
 
@@ -83,9 +98,9 @@
         case 'running':
           return '<span class="badge badge-running">Läuft <span class="badge-dot">●</span></span>';
         case 'finished':
-          return '<span class="badge badge-finished">Beendet ✓</span>';
+          return '<span class="badge badge-finished">Beendet</span>';
         default:
-          return '<span class="badge badge-pending">Ausstehend</span>';
+          return '<span class="badge badge-pending">Wartet</span>';
       }
     }
 
@@ -230,9 +245,11 @@
         return `
           <div class="${cardClass}" data-match-id="${match.id}">
             <div class="match-card-top">
-              <span class="match-time">${formatTime(match.time)}</span>
-              <span class="match-sport">${match.sport} ${emoji}</span>
-              <span class="match-status-corner">${statusBadge(match.status)}</span>
+              <div class="match-card-meta">
+                <span class="match-time">${formatTime(match.time)}</span>
+                ${statusBadge(match.status)}
+              </div>
+              <div class="match-sport">${match.sport} ${emoji}</div>
             </div>
             <div class="match-score-block">
               <div class="match-score-layout">
@@ -251,9 +268,6 @@
               ${renderPointHistory(match)}
             </div>
             ${renderMatchTimer(match)}
-            <div class="match-card-bottom match-card-bottom-desktop">
-              ${statusBadge(match.status)}
-            </div>
             ${renderPenaltyLog(match)}
           </div>
         `;
@@ -355,10 +369,12 @@
 
     function renderLeaderboard() {
       const container = document.getElementById('leaderboard');
-      const titleEl = document.getElementById('leaderboard-title');
-      const sport = (data.settings && data.settings.standingsSport) || 'Fußball';
+      const sport = selectedStandingsSport;
       const emoji = SPORT_EMOJIS[sport] || '';
-      titleEl.textContent = `🏆 ENDSTAND ${sport.toUpperCase()} ${emoji}`;
+
+      document.querySelectorAll('.standings-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.sport === sport);
+      });
 
       const standings = calculateStandings(sport);
 
@@ -514,9 +530,17 @@
       data = newData;
       if (!data.settings) data.settings = { gameDurationMinutes: 10, standingsSport: 'Fußball' };
       if (!data.settings.standingsSport) data.settings.standingsSport = 'Fußball';
+      selectedStandingsSport = data.settings.standingsSport;
       renderAll();
       updateTimestamp();
     }
+
+    document.getElementById('standings-tabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('.standings-tab');
+      if (!btn) return;
+      selectedStandingsSport = btn.dataset.sport;
+      renderLeaderboard();
+    });
 
     setCurrentDate();
 
@@ -535,16 +559,25 @@
       const banner = document.getElementById('push-banner');
       const success = document.getElementById('push-success');
       const footerBtn = document.getElementById('btn-push-footer');
+      const prompt = document.getElementById('push-prompt');
       if (state === 'subscribed') {
         banner.style.display = 'none';
+        prompt.style.display = 'none';
         success.style.display = 'block';
         footerBtn.style.display = 'none';
       } else if (state === 'dismissed') {
         banner.style.display = 'none';
+        prompt.style.display = 'none';
         success.style.display = 'none';
         footerBtn.style.display = 'inline-block';
+      } else if (isMobile()) {
+        banner.style.display = 'none';
+        prompt.style.display = 'flex';
+        success.style.display = 'none';
+        footerBtn.style.display = 'none';
       } else {
         banner.style.display = 'flex';
+        prompt.style.display = 'none';
         success.style.display = 'none';
         footerBtn.style.display = 'none';
       }
@@ -656,8 +689,13 @@
     }
 
     document.getElementById('btn-enable-push').addEventListener('click', subscribeToPush);
+    document.getElementById('btn-enable-push-mobile').addEventListener('click', subscribeToPush);
     document.getElementById('btn-push-footer').addEventListener('click', subscribeToPush);
     document.getElementById('btn-dismiss-push').addEventListener('click', () => {
+      localStorage.setItem('sportfest-push', 'dismissed');
+      showPushUI('dismissed');
+    });
+    document.getElementById('btn-push-later').addEventListener('click', () => {
       localStorage.setItem('sportfest-push', 'dismissed');
       showPushUI('dismissed');
     });
