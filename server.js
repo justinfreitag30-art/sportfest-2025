@@ -163,7 +163,7 @@ function getTeamName(id) {
 function buildMatchPushPayload(match) {
   const emoji = match.emoji || '';
   return {
-    title: '⚽ Spiel gestartet — Sportfest 2025',
+    title: '⚽ Spiel gestartet — Sportfest 2026',
     body: `${getTeamName(match.teamA)} vs ${getTeamName(match.teamB)} — ${match.sport} ${emoji} (${match.time} Uhr)`,
     url: '/'
   };
@@ -352,7 +352,7 @@ app.post('/api/push/notify', requireAuth, async (req, res) => {
   if (test) {
     try {
       const result = await sendPushToAll({
-        title: '🔔 Test — Sportfest 2025',
+        title: '🔔 Test — Sportfest 2026',
         body: 'Push-Benachrichtigungen funktionieren!',
         url: '/'
       });
@@ -379,7 +379,7 @@ app.post('/api/push/notify', requireAuth, async (req, res) => {
 
   const customBody = String(body || message || '').trim();
   if (customBody) {
-    const customTitle = String(title || 'Sportfest 2025').trim().slice(0, 80) || 'Sportfest 2025';
+    const customTitle = String(title || 'Sportfest 2026').trim().slice(0, 80) || 'Sportfest 2026';
     try {
       const result = await sendPushToAll({
         title: customTitle,
@@ -411,6 +411,6 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Sportfest 2025 running on port ${PORT}`);
+  console.log(`Sportfest 2026 running on port ${PORT}`);
   console.log(`Push subscribers: ${subscriptions.length}`);
 });

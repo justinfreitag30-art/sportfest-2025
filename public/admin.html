@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin — Sportfest 2025</title>
+  <title>Admin — Sportfest 2026</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="admin-header">
-    <h1>⚙️ Admin — Sportfest 2025</h1>
+    <h1>⚙️ Admin — Sportfest 2026</h1>
     <div class="admin-header-links">
       <span class="admin-user-badge" id="admin-user-label">…</span>
       <button type="button" class="admin-logout-btn" id="btn-logout">Abmelden</button>
@@ -136,7 +136,7 @@
           <h3>📢 Eigene Nachricht</h3>
           <p class="section-hint">Sende eine benutzerdefinierte Push-Nachricht an alle Zuschauer mit aktivierten Benachrichtigungen.</p>
           <label class="custom-push-label" for="custom-push-title">Titel</label>
-          <input type="text" id="custom-push-title" class="custom-push-input" placeholder="Sportfest 2025" maxlength="80">
+          <input type="text" id="custom-push-title" class="custom-push-input" placeholder="Sportfest 2026" maxlength="80">
           <label class="custom-push-label" for="custom-push-body">Nachricht</label>
           <textarea id="custom-push-body" class="custom-push-textarea" rows="3" maxlength="280" placeholder="z.B. Endspiel um 14:00 — alle zum Hauptplatz!"></textarea>
           <div class="custom-push-actions">
@@ -552,7 +552,7 @@
       btn.disabled = true;
       try {
         const result = await sendPushNotification({
-          title: title || 'Sportfest 2025',
+          title: title || 'Sportfest 2026',
           body
         });
         showPushResult(result);

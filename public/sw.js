@@ -7,7 +7,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  let payload = { title: 'Sportfest 2025', body: 'Neues Update!', url: '/' };
+  let payload = { title: 'Sportfest 2026', body: 'Neues Update!', url: '/' };
   try {
     if (event.data) {
       payload = event.data.json();
@@ -28,7 +28,7 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(payload.title || 'Sportfest 2025', options)
+    self.registration.showNotification(payload.title || 'Sportfest 2026', options)
   );
 });
 

@@ -1,4 +1,4 @@
-# Sportfest 2025
+# Sportfest 2026
 
 Live-Turnier-Webapp mit Echtzeit-Score-Updates via Socket.io.
 
@@ -14,7 +14,7 @@ Live-Turnier-Webapp mit Echtzeit-Score-Updates via Socket.io.
 3. Verbinde dieses Repository
 4. Railway erkennt Node.js automatisch und deployed
 5. Klicke auf "Settings" → "Generate Domain"
-6. Du bekommst eine URL wie: https://sportfest-2025.up.railway.app
+6. Du bekommst eine URL wie: https://sportfest-2026.up.railway.app
 7. Diese URL mit allen teilen — fertig!
 
 Hinweis: data.json wird auf Railway bei jedem Redeploy zurückgesetzt.
