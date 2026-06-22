@@ -26,6 +26,7 @@
       <button type="button" class="admin-tab" data-tab="players">🏃 Spieler</button>
       <button type="button" class="admin-tab" data-tab="settings">⚙️ Mehr</button>
       <button type="button" class="admin-tab" data-tab="users">👤 Benutzer</button>
+      <button type="button" class="admin-tab admin-only-tab" data-tab="chat">💬 Chat</button>
       <button type="button" class="admin-tab" data-tab="log">📋 Protokoll</button>
       <button type="button" class="admin-tab" data-tab="report">📜 Spielbericht</button>
     </nav>
@@ -186,6 +187,23 @@
       </section>
     </div>
 
+    <!-- TAB: Admin-Chat -->
+    <div class="admin-tab-panel" id="tab-chat">
+      <section class="section admin-chat-section">
+        <h2>💬 Admin-Chat</h2>
+        <p class="section-hint">Nur für Administratoren — Schiris sehen diesen Chat nicht. Nachrichten werden live synchronisiert.</p>
+        <div class="admin-chat-wrap">
+          <div id="admin-chat-messages" class="admin-chat-messages">
+            <p class="section-hint admin-chat-empty">Nachrichten werden geladen…</p>
+          </div>
+          <form id="admin-chat-form" class="admin-chat-form">
+            <input type="text" id="admin-chat-input" class="admin-chat-input" placeholder="Nachricht schreiben…" maxlength="500" autocomplete="off">
+            <button type="submit" class="btn btn-primary" id="btn-admin-chat-send">Senden</button>
+          </form>
+        </div>
+      </section>
+    </div>
+
     <!-- TAB: Aktivitäts-Protokoll -->
     <div class="admin-tab-panel" id="tab-log">
       <section class="section">
@@ -266,6 +284,8 @@
     let activeTab = 'live';
     let autoPushOnStart = localStorage.getItem('sportfest-auto-push') !== 'false';
     let pendingLogEntries = [];
+    let adminChatMessages = [];
+    let adminChatStickBottom = true;
 
     const SPORT_EMOJIS = {
       'Fußball': '⚽',
@@ -441,6 +461,112 @@
     document.getElementById('btn-logout').addEventListener('click', async () => {
       await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
       window.location.href = '/admin/login';
+    });
+
+    function formatChatTime(iso) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleString('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    function renderAdminChat() {
+      const el = document.getElementById('admin-chat-messages');
+      if (!el) return;
+
+      if (!adminChatMessages.length) {
+        el.innerHTML = '<p class="section-hint admin-chat-empty">Noch keine Nachrichten. Schreib die erste!</p>';
+        return;
+      }
+
+      el.innerHTML = adminChatMessages.map(m => {
+        const own = m.userId === currentUser?.id;
+        return `
+          <div class="admin-chat-msg ${own ? 'admin-chat-msg-own' : ''}">
+            <div class="admin-chat-msg-meta">
+              <strong>${escapeHtml(m.username)}</strong>
+              <span class="admin-chat-msg-time">${formatChatTime(m.at)}</span>
+            </div>
+            <div class="admin-chat-msg-text">${escapeHtml(m.text)}</div>
+          </div>
+        `;
+      }).join('');
+
+      if (adminChatStickBottom) {
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+
+    async function loadAdminChat() {
+      if (!isAdmin()) return;
+      const el = document.getElementById('admin-chat-messages');
+      try {
+        const res = await fetch('/api/admin-chat', { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('load failed');
+        const { messages } = await res.json();
+        adminChatMessages = Array.isArray(messages) ? messages : [];
+        adminChatStickBottom = true;
+        renderAdminChat();
+      } catch (e) {
+        if (el) {
+          el.innerHTML = '<p class="section-hint admin-chat-empty">Chat konnte nicht geladen werden.</p>';
+        }
+      }
+    }
+
+    function appendAdminChatMessage(msg) {
+      if (!msg?.id || adminChatMessages.some(m => m.id === msg.id)) return;
+      adminChatMessages.push(msg);
+      if (adminChatMessages.length > 300) {
+        adminChatMessages = adminChatMessages.slice(-300);
+      }
+      renderAdminChat();
+    }
+
+    async function sendAdminChatMessage(text) {
+      const trimmed = String(text || '').trim();
+      if (!trimmed) return;
+
+      const btn = document.getElementById('btn-admin-chat-send');
+      const input = document.getElementById('admin-chat-input');
+      if (btn) btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/admin-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ text: trimmed })
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Senden fehlgeschlagen');
+        adminChatStickBottom = true;
+        appendAdminChatMessage(result.message);
+        if (input) input.value = '';
+      } catch (e) {
+        showToast(e.message || 'Nachricht konnte nicht gesendet werden', true);
+      } finally {
+        if (btn) btn.disabled = false;
+        if (input) input.focus();
+      }
+    }
+
+    const adminChatMessagesEl = document.getElementById('admin-chat-messages');
+    if (adminChatMessagesEl) {
+      adminChatMessagesEl.addEventListener('scroll', () => {
+        const el = adminChatMessagesEl;
+        adminChatStickBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+      });
+    }
+
+    document.getElementById('admin-chat-form')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('admin-chat-input');
+      sendAdminChatMessage(input?.value || '');
     });
 
     async function loadUsers() {
@@ -1164,6 +1290,7 @@
         panel.classList.toggle('active', panel.id === 'tab-' + tabId);
       });
       if (tabId === 'users') loadUsers();
+      if (tabId === 'chat') loadAdminChat();
       if (tabId === 'log') loadActivityLog();
       if (tabId === 'report') renderMatchReport();
     }
@@ -1942,6 +2069,17 @@
 
       const socket = io();
       socket.on('update', onDataUpdate);
+      socket.on('admin-chat', (msg) => {
+        if (!isAdmin()) return;
+        if (adminChatMessages.some(m => m.id === msg.id)) return;
+        adminChatMessages.push(msg);
+        if (adminChatMessages.length > 300) {
+          adminChatMessages = adminChatMessages.slice(-300);
+        }
+        if (activeTab === 'chat') {
+          renderAdminChat();
+        }
+      });
     });
   </script>
 </body>

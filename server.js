@@ -58,11 +58,33 @@ function saveData() {
 }
 
 function getPublicData() {
-  const { pushSubscriptions, vapidKeys, activityLog, ...publicData } = data;
+  const { pushSubscriptions, vapidKeys, activityLog, adminChat, ...publicData } = data;
   return publicData;
 }
 
 const MAX_ACTIVITY_LOG = 500;
+const MAX_ADMIN_CHAT = 300;
+
+function appendAdminChatMessage(user, text) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return null;
+  if (!Array.isArray(data.adminChat)) data.adminChat = [];
+
+  const msg = {
+    id: `chat${Date.now()}${Math.random().toString(36).slice(2, 8)}`,
+    at: new Date().toISOString(),
+    userId: user?.id || null,
+    username: user?.username || 'Administrator',
+    text: trimmed.slice(0, 500)
+  };
+
+  data.adminChat.push(msg);
+  if (data.adminChat.length > MAX_ADMIN_CHAT) {
+    data.adminChat = data.adminChat.slice(-MAX_ADMIN_CHAT);
+  }
+  saveData();
+  return msg;
+}
 
 function appendActivityLogs(user, entries) {
   if (!Array.isArray(entries) || entries.length === 0) return;
@@ -579,6 +601,30 @@ app.post('/api/push/unsubscribe', (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/admin-chat', requireAuth, requireAdmin, (req, res) => {
+  const messages = Array.isArray(data.adminChat) ? data.adminChat : [];
+  res.json({ messages });
+});
+
+app.post('/api/admin-chat', requireAuth, requireAdmin, (req, res) => {
+  const user = getSessionUser(req);
+  const text = req.body?.text;
+  if (!text || !String(text).trim()) {
+    return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
+  }
+  if (String(text).trim().length > 500) {
+    return res.status(400).json({ error: 'Nachricht darf maximal 500 Zeichen haben' });
+  }
+
+  const msg = appendAdminChatMessage(user, text);
+  if (!msg) {
+    return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
+  }
+
+  io.emit('admin-chat', msg);
+  res.json({ ok: true, message: msg });
+});
+
 app.get('/api/activity-log', requireAuth, requireAdmin, (req, res) => {
   const logs = Array.isArray(data.activityLog) ? [...data.activityLog] : [];
   logs.reverse();
@@ -661,6 +707,7 @@ app.post('/api/save', requireAuth, (req, res) => {
     const preservedSubs = data.pushSubscriptions || [];
     const preservedVapid = data.vapidKeys;
     const preservedLog = data.activityLog || [];
+    const preservedChat = data.adminChat || [];
 
     const savePayload = {
       settings: req.body.settings,
@@ -677,6 +724,7 @@ app.post('/api/save', requireAuth, (req, res) => {
     data.pushSubscriptions = preservedSubs;
     if (preservedVapid) data.vapidKeys = preservedVapid;
     data.activityLog = preservedLog;
+    data.adminChat = preservedChat;
     subscriptions = data.pushSubscriptions;
 
     appendActivityLogs(user, logEntries);
