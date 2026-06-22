@@ -113,10 +113,16 @@ function loadUsers() {
     const parsed = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
     users = parsed.users || [];
     nextUserId = parsed.nextUserId || 1;
+    let migrated = false;
     users.forEach(u => {
+      if (!u.role) {
+        u.role = 'admin';
+        migrated = true;
+      }
       const num = parseInt(String(u.id).replace('u', ''), 10);
       if (!isNaN(num) && num >= nextUserId) nextUserId = num + 1;
     });
+    if (migrated) saveUsers();
     return;
   } catch {
     // create default admin
@@ -125,7 +131,7 @@ function loadUsers() {
   const defaultUsername = process.env.ADMIN_USERNAME || 'admin';
   const defaultPassword = process.env.ADMIN_PASSWORD || 'sportfest';
   const passwordHash = bcrypt.hashSync(defaultPassword, 10);
-  users = [{ id: 'u1', username: defaultUsername, passwordHash }];
+  users = [{ id: 'u1', username: defaultUsername, passwordHash, role: 'admin' }];
   nextUserId = 2;
   saveUsers();
   console.log('Default admin account created:');
@@ -143,7 +149,61 @@ function requireAuth(req, res, next) {
 }
 
 function sanitizeUser(user) {
-  return { id: user.id, username: user.username };
+  return { id: user.id, username: user.username, role: user.role || 'admin' };
+}
+
+function getSessionUser(req) {
+  if (!req.session?.userId) return null;
+  return users.find(u => u.id === req.session.userId) || null;
+}
+
+function requireAdmin(req, res, next) {
+  const user = getSessionUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Nicht angemeldet' });
+  }
+  if ((user.role || 'admin') !== 'admin') {
+    return res.status(403).json({ error: 'Keine Berechtigung' });
+  }
+  next();
+}
+
+const SCHIRI_LOCKED_MATCH_FIELDS = ['id', 'time', 'sport', 'emoji', 'teamA', 'teamB', 'status', 'startedAt', 'endedAt'];
+
+function applySchiriSave(incoming) {
+  const current = normalizeData(JSON.parse(JSON.stringify(data)));
+  const next = normalizeData(incoming);
+
+  if (JSON.stringify(next.teams) !== JSON.stringify(current.teams)) {
+    throw new Error('Schiris dürfen Teams nicht ändern');
+  }
+  if (JSON.stringify(next.settings) !== JSON.stringify(current.settings)) {
+    throw new Error('Schiris dürfen Einstellungen nicht ändern');
+  }
+  if (next.matches.length !== current.matches.length) {
+    throw new Error('Schiris dürfen keine Spiele hinzufügen oder löschen');
+  }
+
+  const mergedMatches = current.matches.map(cur => {
+    const inc = next.matches.find(m => m.id === cur.id);
+    if (!inc) throw new Error('Unbekanntes Spiel');
+
+    for (const field of SCHIRI_LOCKED_MATCH_FIELDS) {
+      if (JSON.stringify(inc[field]) !== JSON.stringify(cur[field])) {
+        throw new Error('Schiris dürfen nur Punkte und Strafen ändern');
+      }
+    }
+
+    return {
+      ...cur,
+      scoreA: Number(inc.scoreA) || 0,
+      scoreB: Number(inc.scoreB) || 0,
+      goals: inc.goals || [],
+      penalties: inc.penalties || []
+    };
+  });
+
+  return { ...current, matches: mergedMatches };
 }
 
 loadData();
@@ -241,6 +301,7 @@ app.post('/api/auth/login', async (req, res) => {
 
   req.session.userId = user.id;
   req.session.username = user.username;
+  req.session.role = user.role || 'admin';
   res.json({ ok: true, user: sanitizeUser(user) });
 });
 
@@ -261,13 +322,14 @@ app.get('/api/auth/me', (req, res) => {
   res.json(sanitizeUser(user));
 });
 
-app.get('/api/auth/users', requireAuth, (req, res) => {
+app.get('/api/auth/users', requireAuth, requireAdmin, (req, res) => {
   res.json({ users: users.map(sanitizeUser) });
 });
 
-app.post('/api/auth/users', requireAuth, (req, res) => {
-  const { username, password } = req.body || {};
+app.post('/api/auth/users', requireAuth, requireAdmin, (req, res) => {
+  const { username, password, role } = req.body || {};
   const trimmed = String(username || '').trim();
+  const userRole = role === 'schiri' ? 'schiri' : 'admin';
   if (!trimmed || trimmed.length < 2) {
     return res.status(400).json({ error: 'Benutzername muss mindestens 2 Zeichen haben' });
   }
@@ -281,14 +343,15 @@ app.post('/api/auth/users', requireAuth, (req, res) => {
   const user = {
     id: `u${nextUserId++}`,
     username: trimmed,
-    passwordHash: bcrypt.hashSync(password, 10)
+    passwordHash: bcrypt.hashSync(password, 10),
+    role: userRole
   };
   users.push(user);
   saveUsers();
   res.json({ ok: true, user: sanitizeUser(user) });
 });
 
-app.delete('/api/auth/users/:id', requireAuth, (req, res) => {
+app.delete('/api/auth/users/:id', requireAuth, requireAdmin, (req, res) => {
   const { id } = req.params;
   if (id === req.session.userId) {
     return res.status(400).json({ error: 'Du kannst dein eigenes Konto nicht löschen' });
@@ -320,7 +383,7 @@ app.get('/api/push/vapid-key', (req, res) => {
   res.json({ publicKey: vapidKeys.publicKey });
 });
 
-app.get('/api/push/status', requireAuth, (req, res) => {
+app.get('/api/push/status', requireAuth, requireAdmin, (req, res) => {
   res.json({ subscribers: subscriptions.length });
 });
 
@@ -346,7 +409,7 @@ app.post('/api/push/unsubscribe', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/push/notify', requireAuth, async (req, res) => {
+app.post('/api/push/notify', requireAuth, requireAdmin, async (req, res) => {
   const { matchId, test, title, body, message } = req.body;
 
   if (test) {
@@ -400,10 +463,22 @@ app.post('/api/save', requireAuth, (req, res) => {
   if (!req.body || !Array.isArray(req.body.teams) || !Array.isArray(req.body.matches)) {
     return res.status(400).json({ error: 'Invalid data format' });
   }
-  data = normalizeData(req.body);
-  saveData();
-  io.emit('update', data);
-  res.json({ ok: true });
+
+  const user = getSessionUser(req);
+  const role = user?.role || 'admin';
+
+  try {
+    if (role === 'schiri') {
+      data = applySchiriSave(req.body);
+    } else {
+      data = normalizeData(req.body);
+    }
+    saveData();
+    io.emit('update', data);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(403).json({ error: err.message || 'Keine Berechtigung' });
+  }
 });
 
 io.on('connection', (socket) => {

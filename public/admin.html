@@ -2,13 +2,13 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Admin — Sportfest 2026</title>
   <link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body class="admin-page">
   <header class="admin-header">
-    <h1>⚙️ Admin — Sportfest 2026</h1>
+    <h1 id="admin-page-title">⚙️ Admin — Sportfest 2026</h1>
     <div class="admin-header-links">
       <span class="admin-user-badge" id="admin-user-label">…</span>
       <button type="button" class="admin-logout-btn" id="btn-logout">Abmelden</button>
@@ -32,8 +32,8 @@
     <div class="admin-tab-panel active" id="tab-live">
       <section class="section">
         <h2>Live Scoring</h2>
-        <p class="section-hint">Spiele starten, Tore eintragen, Strafen vergeben.</p>
-        <div class="push-status-bar" id="push-status">🔔 Push: wird geladen…</div>
+        <p class="section-hint" id="live-tab-hint">Spiele starten, Tore eintragen, Strafen vergeben.</p>
+        <div class="push-status-bar admin-only" id="push-status">🔔 Push: wird geladen…</div>
         <div id="scoring-list"></div>
       </section>
     </div>
@@ -161,13 +161,17 @@
     <div class="admin-tab-panel" id="tab-users">
       <section class="section">
         <h2>👤 Benutzerkonten</h2>
-        <p class="section-hint">Lege Konten für weitere Admins an. Jeder angemeldete Benutzer kann das Admin-Panel nutzen.</p>
+        <p class="section-hint">Lege Konten für Admins und Schiris an. Schiris dürfen nur Punkte und Strafen ändern.</p>
         <div id="users-list" class="users-list"></div>
         <div class="user-create-form">
           <h3>Neues Konto anlegen</h3>
           <div class="form-row">
             <input type="text" id="new-username" placeholder="Benutzername" autocomplete="username">
             <input type="password" id="new-password" placeholder="Passwort (min. 4 Zeichen)" autocomplete="new-password">
+            <select id="new-user-role" class="user-role-select">
+              <option value="schiri">Schiri — nur Punkte &amp; Strafen</option>
+              <option value="admin">Administrator — alles</option>
+            </select>
             <button class="btn btn-primary" id="btn-create-user">Konto erstellen</button>
           </div>
         </div>
@@ -274,19 +278,61 @@
       if (!data.settings.standingsSport) data.settings.standingsSport = 'Fußball';
     }
 
+    const ROLE_LABELS = { admin: 'Administrator', schiri: 'Schiri' };
+
+    function isAdmin() {
+      return currentUser?.role === 'admin';
+    }
+
+    function isSchiri() {
+      return currentUser?.role === 'schiri';
+    }
+
     function saveData() {
       return fetch('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify(data)
-      }).then(res => {
+      }).then(async res => {
         if (res.status === 401) {
           window.location.href = '/admin/login';
           throw new Error('Nicht angemeldet');
         }
+        if (res.status === 403) {
+          const result = await res.json().catch(() => ({}));
+          showToast(result.error || 'Keine Berechtigung für diese Aktion', true);
+          throw new Error('Keine Berechtigung');
+        }
         return res;
       });
+    }
+
+    function applyRoleUI() {
+      const roleLabel = ROLE_LABELS[currentUser?.role] || 'Benutzer';
+      document.getElementById('admin-user-label').textContent = `👤 ${currentUser.username} · ${roleLabel}`;
+      document.body.classList.toggle('role-admin', isAdmin());
+      document.body.classList.toggle('role-schiri', isSchiri());
+
+      document.querySelectorAll('.admin-tab').forEach(tab => {
+        const adminOnly = tab.dataset.tab !== 'live';
+        tab.hidden = isSchiri() && adminOnly;
+      });
+
+      document.querySelectorAll('.admin-only').forEach(el => {
+        el.hidden = isSchiri();
+      });
+
+      if (isSchiri()) {
+        document.getElementById('admin-page-title').textContent = '🏁 Schiri — Sportfest 2026';
+        document.getElementById('live-tab-hint').textContent =
+          'Punkte eintragen und Strafen vergeben. Spielstart und Einstellungen nur für Administratoren.';
+        switchTab('live');
+      } else {
+        document.getElementById('admin-page-title').textContent = '⚙️ Admin — Sportfest 2026';
+        document.getElementById('live-tab-hint').textContent =
+          'Spiele starten, Tore eintragen, Strafen vergeben.';
+      }
     }
 
     async function checkAuth() {
@@ -296,7 +342,7 @@
         return false;
       }
       currentUser = await res.json();
-      document.getElementById('admin-user-label').textContent = `👤 ${currentUser.username}`;
+      applyRoleUI();
       return true;
     }
 
@@ -322,14 +368,20 @@
         el.innerHTML = '<p class="section-hint">Noch keine Benutzer.</p>';
         return;
       }
-      el.innerHTML = users.map(u => `
+      el.innerHTML = users.map(u => {
+        const roleName = ROLE_LABELS[u.role] || u.role || 'Administrator';
+        return `
         <div class="user-row">
-          <span class="user-row-name">${escapeHtml(u.username)}${u.id === currentUser?.id ? ' <em>(du)</em>' : ''}</span>
+          <span class="user-row-name">
+            ${escapeHtml(u.username)}${u.id === currentUser?.id ? ' <em>(du)</em>' : ''}
+            <span class="user-role-badge user-role-${escapeHtml(u.role || 'admin')}">${escapeHtml(roleName)}</span>
+          </span>
           ${u.id !== currentUser?.id
             ? `<button class="btn btn-red btn-small" data-delete-user="${escapeHtml(u.id)}">Löschen</button>`
             : '<span class="user-row-self">Aktives Konto</span>'}
         </div>
-      `).join('');
+      `;
+      }).join('');
 
       el.querySelectorAll('[data-delete-user]').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -361,7 +413,11 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({ username, password })
+          body: JSON.stringify({
+            username,
+            password,
+            role: document.getElementById('new-user-role').value
+          })
         });
         const result = await res.json();
         if (!res.ok) throw new Error(result.error);
@@ -476,6 +532,7 @@
     }
 
     async function updatePushStatus() {
+      if (!isAdmin()) return;
       try {
         const res = await fetch('/api/push/status', { credentials: 'same-origin' });
         const { subscribers } = await res.json();
@@ -946,7 +1003,9 @@
 
     function renderScoring() {
       const list = document.getElementById('scoring-list');
-      const active = data.matches.filter(m => m.status === 'running' || m.status === 'pending');
+      const active = isSchiri()
+        ? data.matches.filter(m => ['running', 'pending', 'finished'].includes(m.status))
+        : data.matches.filter(m => m.status === 'running' || m.status === 'pending');
 
       if (active.length === 0) {
         list.innerHTML = '<div class="empty-state">Keine laufenden oder ausstehenden Spiele.</div>';
@@ -955,9 +1014,15 @@
 
       list.innerHTML = active.map(match => {
         const emoji = match.emoji || SPORT_EMOJIS[match.sport] || '';
-        const startBtn = match.status === 'pending'
+        const startBtn = !isSchiri() && match.status === 'pending'
           ? `<button class="btn btn-green btn-small btn-start" data-id="${match.id}">▶ Starten</button>`
-          : `<button class="btn btn-red btn-small btn-stop" data-id="${match.id}">■ Beenden</button>`;
+          : (!isSchiri() && match.status === 'running'
+            ? `<button class="btn btn-red btn-small btn-stop" data-id="${match.id}">■ Beenden</button>`
+            : '');
+
+        const adminActions = isSchiri() ? '' : `
+              <button class="btn btn-primary btn-small btn-send-push" data-id="${match.id}">📢 Push senden</button>
+              <button class="btn btn-gray btn-small btn-reset-match" data-id="${match.id}">↺ Reset 0:0</button>`;
 
         const remaining = getRemainingSeconds(match);
         const timerHtml = match.status === 'running' && match.startedAt
@@ -967,23 +1032,28 @@
         return `
           <div class="scoring-row ${remaining === 0 ? 'timer-flash' : ''}" data-match-id="${match.id}">
             <div class="scoring-match-info">${match.time} — ${match.sport} ${emoji} ${timerHtml}</div>
-            <span class="scoring-team">${escapeHtml(getTeamName(match.teamA))}</span>
-            <div class="scoring-controls">
-              <button class="btn-score btn-score-minus-a" data-id="${match.id}">−</button>
-              <span class="scoring-score">${match.scoreA}</span>
-              <button class="btn-score btn-score-plus-a" data-id="${match.id}">+</button>
+            <div class="scoring-scoreboard">
+              <div class="scoring-side">
+                <span class="scoring-team">${escapeHtml(getTeamName(match.teamA))}</span>
+                <div class="scoring-controls">
+                  <button class="btn-score btn-score-minus-a" data-id="${match.id}">−</button>
+                  <span class="scoring-score">${match.scoreA}</span>
+                  <button class="btn-score btn-score-plus-a" data-id="${match.id}">+</button>
+                </div>
+              </div>
+              <span class="scoring-separator">:</span>
+              <div class="scoring-side">
+                <span class="scoring-team">${escapeHtml(getTeamName(match.teamB))}</span>
+                <div class="scoring-controls">
+                  <button class="btn-score btn-score-minus-b" data-id="${match.id}">−</button>
+                  <span class="scoring-score">${match.scoreB}</span>
+                  <button class="btn-score btn-score-plus-b" data-id="${match.id}">+</button>
+                </div>
+              </div>
             </div>
-            <span style="font-weight:700; font-size:1.25rem;">:</span>
-            <div class="scoring-controls">
-              <button class="btn-score btn-score-minus-b" data-id="${match.id}">−</button>
-              <span class="scoring-score">${match.scoreB}</span>
-              <button class="btn-score btn-score-plus-b" data-id="${match.id}">+</button>
-            </div>
-            <span class="scoring-team">${escapeHtml(getTeamName(match.teamB))}</span>
             <div class="scoring-actions">
               ${startBtn}
-              <button class="btn btn-primary btn-small btn-send-push" data-id="${match.id}">📢 Push senden</button>
-              <button class="btn btn-gray btn-small btn-reset-match" data-id="${match.id}">↺ Reset 0:0</button>
+              ${adminActions}
             </div>
             ${renderGoalsList(match)}
             ${renderPenaltyPanel(match)}
