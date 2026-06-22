@@ -515,6 +515,14 @@
 
     document.getElementById('btn-refresh-log').addEventListener('click', loadActivityLog);
 
+    function persistChanges(logAction, logText) {
+      if (logAction && logText) logActivity(logAction, logText);
+      return saveData().catch(err => {
+        console.error('Speichern fehlgeschlagen:', err);
+        showToast('Änderung konnte nicht gespeichert werden', true);
+      });
+    }
+
     function onDataUpdate(newData) {
       data = newData;
       ensureSettings();
@@ -522,6 +530,7 @@
       document.getElementById('game-duration').value = data.settings.gameDurationMinutes;
       document.getElementById('standings-sport').value = data.settings.standingsSport || 'Fußball';
       renderAll();
+      if (isAdmin() && activeTab === 'log') loadActivityLog();
     }
 
     function getRemainingSeconds(match) {
@@ -739,7 +748,9 @@
 
       list.querySelectorAll('.team-input').forEach(input => {
         input.addEventListener('change', () => {
-          data.teams[parseInt(input.dataset.teamIdx, 10)].name = input.value;
+          const idx = parseInt(input.dataset.teamIdx, 10);
+          data.teams[idx].name = input.value;
+          persistChanges('team', `Team umbenannt: ${input.value}`);
         });
       });
 
@@ -747,9 +758,11 @@
         btn.addEventListener('click', () => {
           const idx = parseInt(btn.dataset.teamIdx, 10);
           const teamId = data.teams[idx].id;
+          const teamName = data.teams[idx].name;
           data.teams.splice(idx, 1);
           data.matches = data.matches.filter(m => m.teamA !== teamId && m.teamB !== teamId);
           renderAll();
+          persistChanges('team', `Team gelöscht: ${teamName}`);
         });
       });
 
@@ -791,6 +804,7 @@
           const tIdx = parseInt(input.dataset.teamIdx, 10);
           const pIdx = parseInt(input.dataset.playerIdx, 10);
           data.teams[tIdx].players[pIdx].name = input.value;
+          persistChanges('player', `Spieler aktualisiert: ${input.value} (${data.teams[tIdx].name})`);
         });
       });
 
@@ -799,6 +813,7 @@
           const tIdx = parseInt(input.dataset.teamIdx, 10);
           const pIdx = parseInt(input.dataset.playerIdx, 10);
           data.teams[tIdx].players[pIdx].number = parseInt(input.value, 10) || null;
+          persistChanges('player', `Spielernummer geändert: ${data.teams[tIdx].players[pIdx].name}`);
         });
       });
 
@@ -808,6 +823,7 @@
           if (!data.teams[idx].players) data.teams[idx].players = [];
           data.teams[idx].players.push({ id: 'pl' + nextPlayerId++, name: 'Neuer Spieler', number: null });
           renderAll();
+          persistChanges('player', `Spieler hinzugefügt: ${data.teams[idx].name}`);
         });
       });
 
@@ -815,6 +831,7 @@
         btn.addEventListener('click', () => {
           const tIdx = parseInt(btn.dataset.teamIdx, 10);
           const pIdx = parseInt(btn.dataset.playerIdx, 10);
+          const playerName = data.teams[tIdx].players[pIdx].name;
           const playerId = data.teams[tIdx].players[pIdx].id;
           data.teams[tIdx].players.splice(pIdx, 1);
           data.matches.forEach(m => {
@@ -824,6 +841,7 @@
             );
           });
           renderAll();
+          persistChanges('player', `Spieler gelöscht: ${playerName}`);
         });
       });
     }
@@ -840,6 +858,7 @@
     document.getElementById('btn-add-team').addEventListener('click', () => {
       data.teams.push({ id: 't' + nextTeamId++, name: 'Neues Team', players: [] });
       renderAll();
+      persistChanges('team', 'Neues Team hinzugefügt');
     });
 
     document.getElementById('btn-save-teams').addEventListener('click', () => {
@@ -847,8 +866,7 @@
         const idx = parseInt(input.dataset.teamIdx, 10);
         data.teams[idx].name = input.value;
       });
-      logActivity('team', 'Teamnamen gespeichert');
-      saveData();
+      persistChanges('team', 'Alle Teamnamen gespeichert');
     });
 
     document.getElementById('btn-save-players').addEventListener('click', () => {
@@ -862,7 +880,7 @@
         const pIdx = parseInt(input.dataset.playerIdx, 10);
         data.teams[tIdx].players[pIdx].number = parseInt(input.value, 10) || null;
       });
-      logActivity('player', 'Spielerdaten gespeichert');
+      logActivity('player', 'Alle Spielerdaten gespeichert');
       saveData();
     });
 
@@ -898,6 +916,7 @@
           if (idx > 0) {
             [data.matches[idx - 1], data.matches[idx]] = [data.matches[idx], data.matches[idx - 1]];
             renderAll();
+            persistChanges('schedule', 'Spielplan-Reihenfolge geändert');
           }
         });
       });
@@ -908,6 +927,7 @@
           if (idx < data.matches.length - 1) {
             [data.matches[idx], data.matches[idx + 1]] = [data.matches[idx + 1], data.matches[idx]];
             renderAll();
+            persistChanges('schedule', 'Spielplan-Reihenfolge geändert');
           }
         });
       });
@@ -967,8 +987,7 @@
     });
 
     document.getElementById('btn-save-matches').addEventListener('click', () => {
-      logActivity('schedule', 'Spielplan-Reihenfolge gespeichert');
-      saveData();
+      persistChanges('schedule', 'Spielplan gespeichert');
     });
 
     // ── Live Scoring ──
